@@ -1,0 +1,16 @@
+# Configuration file for systemd that starts tcpborphserver3
+#
+# Copy this file to /etc/systemd/system/. Then run
+# `systemctl enable tcpborphserver3 and `systemctl start tcpborphserver3`.
+
+[Unit]
+Description=Tcpborphserver3 Daemon
+
+[Service]
+Type=forking
+Restart=always
+User=root
+ExecStart=/home/casper/bin/tcpborphserver3
+
+[Install]
+WantedBy=multi-user.target
