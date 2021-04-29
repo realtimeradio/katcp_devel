@@ -26,6 +26,9 @@
 
 #include "phy.h"
 
+#include "mcb.h"
+#include "rfsoc.h"
+
 #define ARRAY_SIZE 12
 #define DEFAULT_FILENAME    "vsc848x_EDC_FW_1_14.bin"
 
@@ -3182,6 +3185,16 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?chassis-led",    "set a chassis led (?chassis-led led state)", &led_chassis_cmd, 0, TBS_MODE_RAW);
   result += register_katcp(d, "?capture", "starts a data capture", &capture_start_cmd);
   result += register_katcp(d, "?capture-stop", "stops a data capture", &capture_stop_cmd);
+
+  /* mcb's test cmd's */
+  result += register_flag_mode_katcp(d, "?mcb-ok-check", "mcb's attempt at making a katcp function", &mcb_ok_check_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?mcb-own-check", "mcb test own check katcp function", &mcb_own_check_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?mcb-send-value", "practice sending my own information", &mcb_send_value_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?mcb-notices", "practice using notices", &mcb_notices_cmd, 0, TBS_MODE_RAW);
+
+  /* RFSoC devel */
+  result += register_flag_mode_katcp(d, "?upload-rfclk-config", "upload tics txt register file for programming", &upload_rfclk_config_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-init", "initialize rfdc driver (upload and apply a valid device-tree overlay) (?rfdc-init [port]", &rfdc_init_cmd, 0, TBS_MODE_RAW);
 
   tr->r_chassis = chassis_init_tbs(d, TBS_ROACH_CHASSIS);
   if(tr->r_chassis){

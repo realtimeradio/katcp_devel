@@ -1106,6 +1106,206 @@ int upload_program_cmd(struct katcp_dispatch *d, int argc)
   return KATCP_RESULT_OK;
 }
 
+int subprocess_upload_rfclk_tbs(struct katcl_line *l, void *data) {
+
+  struct tbs_port_data *pd;
+  int lfd, nfd, rr, wr, have;
+  unsigned char buf[MTU];
+  unsigned int count;
+
+  pd = data;
+
+  if (pd == NULL){
+    sync_message_katcl(l, KATCP_LEVEL_ERROR, UPLOAD_LABEL, "no state supplied to subordinate logic");
+    return -1;
+  }
+
+  lfd = net_listen(NULL, pd->t_port, 0);
+  if (lfd < 0){
+    sync_message_katcl(l, KATCP_LEVEL_ERROR, UPLOAD_LABEL, "unable to bind port %d: %s", pd->t_port, strerror(errno));
+    return -1;
+  }
+
+  signal(SIGALRM, SIG_DFL);
+  alarm(pd->t_timeout);
+
+  nfd = accept(lfd, NULL, 0);
+  close(lfd);
+
+  if(nfd < 0){
+    sync_message_katcl(l, KATCP_LEVEL_ERROR, UPLOAD_LABEL, "accept on port %d failed: %s", pd->t_port, strerror(errno));
+    return -1;
+  }
+
+  count = 0;
+
+  for (;;) {
+    // mcb: is recv even the right function here? What are the correct flags
+    // (zero doesn't seem right)
+    rr = recv(nfd, buf, MTU, 0);
+    if (rr == 0){
+      break;
+    } else if (rr < 0){
+      sync_message_katcl(l, KATCP_LEVEL_ERROR, UPLOAD_LABEL, "read failed while receiving %s", strerror(errno));
+      close(nfd);
+      return -1;
+    }
+
+    have = 0;
+    do {
+      wr = write(pd->t_fd, buf + have, rr - have);
+      switch(wr){
+
+        case -1:
+          switch(errno){
+            case EAGAIN:
+            case EINTR:
+              break;
+            default:
+              sync_message_katcl(l, KATCP_LEVEL_ERROR, UPLOAD_LABEL, "saving of network stream to file failed: %s", strerror(errno));
+              close(nfd);
+              return -1;
+          }
+          break;
+
+        case 0:
+          sync_message_katcl(l, KATCP_LEVEL_ERROR, UPLOAD_LABEL, "unexpected zero write");
+          close(nfd);
+          return -1;
+
+        default:
+          have += wr;
+#if 0
+          sync_message_katcl(l, KATCP_LEVEL_DEBUG, NULL, "%s: wrote %d bytes to parent", __func__, wr);
+#endif
+          break;
+      }
+    } while(have < rr);
+
+    count += rr;
+
+    alarm(UPLOAD_TIMEOUT);
+  }
+
+  close(nfd);
+  /* Close file that we just finished writing to */
+  close(pd->t_fd);
+
+  if(pd->t_expected > 0){
+    if(pd->t_expected != count){
+      sync_message_katcl(l, KATCP_LEVEL_ERROR, UPLOAD_LABEL, "expected %u bytes but received %u", pd->t_expected, count);
+      return -1;
+    }
+  }
+
+  alarm(0);
+
+  return 0;
+
+}
+
+int upload_rfclk_config_cmd(struct katcp_dispatch *d, int argc) {
+  struct katcp_dispatch *dl;
+  struct katcp_job *j;
+  struct katcp_url *url;
+  struct tbs_port_data *pd;
+  unsigned int port, timeout, expected;
+  struct tbs_raw *tr;
+  struct katcp_notice *nx;
+
+  dl = template_shared_katcp(d);
+  if(dl == NULL){
+    return KATCP_RESULT_FAIL;
+  }
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL){
+    return KATCP_RESULT_FAIL;
+  }
+
+  expected = 0;
+  timeout = 0;
+  port = UPLOAD_PORT;
+
+  if(argc > 1){
+    port = arg_unsigned_long_katcp(d, 1);
+    if(sane_port_tbs(d, port) < 0){
+      return KATCP_RESULT_INVALID;
+    }
+  }
+
+  if(argc > 2){
+    expected = arg_unsigned_long_katcp(d, 2);
+    log_message_katcp(d, KATCP_LEVEL_DEBUG, NULL, "expected length is %u bytes", expected);
+    if(argc > 3){
+      timeout = arg_unsigned_long_katcp(d, 3);
+      log_message_katcp(d, KATCP_LEVEL_DEBUG, NULL, "user requested a timeout of %us", timeout);
+    }
+  }
+
+  nx = find_notice_katcp(d, TBS_RFCLK_FILE);
+  if(nx){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "another upload already seems in progress, halting this attempt");
+    return KATCP_RESULT_FAIL;
+  }
+
+  nx = create_notice_katcp(d, TBS_RFCLK_FILE, 0);
+  if(nx == NULL){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to create notification logic to trigger when upload completes");
+    return KATCP_RESULT_FAIL;
+  }
+
+  int program = 1;
+  pd = create_port_data_tbs(d, TBS_RFCLK_FILE, port, program, expected, timeout, TBS_FORMAT_ANY, TBS_DEL_NEVER); //TBS_DEL_ALWAYS);
+
+  if (pd == NULL){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "%s: couldn't create port data", __func__);
+    return KATCP_RESULT_FAIL;
+  }
+
+  /* added in the global space dl, so that it completes even if client goes away */
+  // mcb: not sure what to do here. in the methods that program the fpga there
+  // seems to be a lot of logic that checks the status of the transfer by
+  // monitoring return values of subrpocess but they are all related to
+  // programming the fpga...
+  if(add_notice_katcp(dl, nx, &upload_program_complete_tbs, pd) < 0){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to register callback for upload completion");
+    destroy_port_data_tbs(d, pd, 1);
+    return KATCP_RESULT_FAIL;
+  }
+
+  url = create_exec_kurl_katcp("rfclk_upload");
+  if (url == NULL){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "%s: could not create kurl", __func__);
+    destroy_port_data_tbs(d, pd, 1);
+    return KATCP_RESULT_FAIL;
+  }
+
+  j = find_job_katcp(dl, url->u_str);
+  if (j){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "found job for %s", url->u_str);
+    destroy_kurl_katcp(url);
+    destroy_port_data_tbs(d, pd, 1);
+    return KATCP_RESULT_FAIL;
+  }
+
+  j = run_child_process_tbs(dl, url, &subprocess_upload_rfclk_tbs, pd, nx);
+  if (j == NULL){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to run child process");
+    destroy_kurl_katcp(url);
+    destroy_port_data_tbs(d, pd, 1);
+    return KATCP_RESULT_FAIL;
+  }
+
+
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "awaiting transfer on port %d", pd->t_port);
+
+  return KATCP_RESULT_OK;
+
+  // mcb: it looks like how this all works is that a katcp notice is a callback
+  // to run after the subprocess here completes
+
+}
 
 /* unused ************************************************************************/
 
@@ -1203,6 +1403,8 @@ int upload_complete_tbs(struct katcp_dispatch *d, struct katcp_notice *n, void *
 
   return 0;
 }
+
+
 
 /* !< this doesn't seem to be called */
 int upload_cmd(struct katcp_dispatch *d, int argc)
