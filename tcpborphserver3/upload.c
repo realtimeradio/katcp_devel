@@ -25,6 +25,10 @@
 #include "tcpborphserver3.h"
 #include "loadbof.h"
 #include "tg.h"
+#include "rfsoc.h" // will implement callbacks in rfsoc.c but call them here
+/* will copy over the tmp upload file type stuff and then use the "call"
+ * function pointer mechanism to know which function to use in the callback
+ */
 
 #define MTU               1024*64
 
@@ -1106,6 +1110,132 @@ int upload_program_cmd(struct katcp_dispatch *d, int argc)
   return KATCP_RESULT_OK;
 }
 
+/* int rfdc_upload_cmd(struct katcp_dispatch *d, int argc) {
+  struct katcp_dispatch *dl;
+  struct katcp_job *j;
+  struct katcp_url *url;
+  struct tbs_port_data *pd;
+  unsigned int port, timeout, expected;
+  struct tbs_raw *tr;
+  struct katcp_notice *nx;
+
+  char* upload_fname;
+  char* upload_type;
+  int upload_fmt;
+
+  dl = template_shared_katcp(d);
+  if(dl == NULL){
+    return KATCP_RESULT_FAIL;
+  }
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL){
+    return KATCP_RESULT_FAIL;
+  }
+
+  expected = 0;
+  timeout = 0;
+  port = UPLOAD_PORT;
+
+  if(argc <= 1){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "need to specify upload type, dtbo|lmk|lmx ");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // get requested upload type
+  upload_type = arg_string_katcp(d, 1);
+  if (strcmp(upload_type, "lmk") == 0) {
+    upload_fmt = RFDC_UPLOAD_LMK;
+    upload_fname = TBS_RFCLK_FILE;
+  } else if (strcmp(upload_type, "lmx") == 0) {
+    upload_fmt = RFDC_UPLOAD_LMX;
+    upload_fname = TBS_RFCLK_FILE;
+  } else if (strcmp(upload_type, "dtbo") == 0) {
+    upload_fmt = RFDC_UPLOAD_DTO;
+    upload_fname = TBS_DTBO_FILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could determine rfdc upload type");
+  }
+
+  if(argc > 2){
+    port = arg_unsigned_long_katcp(d, 1);
+    if(sane_port_tbs(d, port) < 0){
+      return KATCP_RESULT_INVALID;
+    }
+  }
+
+  if(argc > 3){
+    expected = arg_unsigned_long_katcp(d, 2);
+    log_message_katcp(d, KATCP_LEVEL_DEBUG, NULL, "expected length is %u bytes", expected);
+    if(argc > 4){
+      timeout = arg_unsigned_long_katcp(d, 3);
+      log_message_katcp(d, KATCP_LEVEL_DEBUG, NULL, "user requested a timeout of %us", timeout);
+    }
+  }
+
+  nx = find_notice_katcp(d, "rfdc-upload");
+  if(nx){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "another upload already seems in progress, halting this attempt");
+    return KATCP_RESULT_FAIL;
+  }
+
+  nx = create_notice_katcp(d, "rfdc-upload", 0);
+  if(nx == NULL){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to create notification logic to trigger when upload completes");
+    return KATCP_RESULT_FAIL;
+  }
+
+  int program = 1;
+  pd = create_port_data_tbs(d, upload_fname, port, program, expected, timeout, TBS_FORMAT_ANY, TBS_DEL_NEVER); //TBS_DEL_ALWAYS);
+
+  if (pd == NULL){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "%s: couldn't create port data", __func__);
+    return KATCP_RESULT_FAIL;
+  }
+
+  // added in the global space dl, so that it completes even if client goes away //
+  // mcb: not sure what to do here. in the methods that program the fpga there
+  // seems to be a lot of logic that checks the status of the transfer by
+  // monitoring return values of subrpocess but they are all related to
+  // programming the fpga...
+  if(add_notice_katcp(dl, nx, &upload_program_complete_tbs, pd) < 0){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to register callback for upload completion");
+    destroy_port_data_tbs(d, pd, 1);
+    return KATCP_RESULT_FAIL;
+  }
+
+  url = create_exec_kurl_katcp("rfdc-upload");
+  if (url == NULL){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "%s: could not create kurl", __func__);
+    destroy_port_data_tbs(d, pd, 1);
+    return KATCP_RESULT_FAIL;
+  }
+
+  j = find_job_katcp(dl, url->u_str);
+  if (j){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "found job for %s", url->u_str);
+    destroy_kurl_katcp(url);
+    destroy_port_data_tbs(d, pd, 1);
+    return KATCP_RESULT_FAIL;
+  }
+
+  j = run_child_process_tbs(dl, url, &subprocess_upload_rfdc_tbs, pd, nx);
+  if (j == NULL){
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to run child process");
+    destroy_kurl_katcp(url);
+    destroy_port_data_tbs(d, pd, 1);
+    return KATCP_RESULT_FAIL;
+  }
+
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "awaiting transfer on port %d", pd->t_port);
+
+  return KATCP_RESULT_OK;
+
+  // mcb: it looks like how this all works is that a katcp notice is a callback
+  // to run after the subprocess here completes
+
+} */
+
 int subprocess_upload_rfclk_tbs(struct katcl_line *l, void *data) {
 
   struct tbs_port_data *pd;
@@ -1204,14 +1334,18 @@ int subprocess_upload_rfclk_tbs(struct katcl_line *l, void *data) {
 
 }
 
-int upload_rfclk_config_cmd(struct katcp_dispatch *d, int argc) {
+int rfdc_upload_rfclk_cmd(struct katcp_dispatch *d, int argc) {
   struct katcp_dispatch *dl;
   struct katcp_job *j;
   struct katcp_url *url;
+  char* tcsfile;
+  char* fnamebuf;
+  int len;
   struct tbs_port_data *pd;
   unsigned int port, timeout, expected;
   struct tbs_raw *tr;
   struct katcp_notice *nx;
+
 
   dl = template_shared_katcp(d);
   if(dl == NULL){
@@ -1227,36 +1361,67 @@ int upload_rfclk_config_cmd(struct katcp_dispatch *d, int argc) {
   timeout = 0;
   port = UPLOAD_PORT;
 
-  if(argc > 1){
-    port = arg_unsigned_long_katcp(d, 1);
+  // use requested file or substitute for the default
+  if (argc > 1) {
+    tcsfile = arg_string_katcp(d, 1);
+    if (tcsfile == NULL) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to resolve file name to program");
+      return KATCP_RESULT_FAIL;
+    }
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "requested clock file %s", tcsfile);
+
+    if (strchr(tcsfile, '/') != NULL) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "file name %s may not contain a path component", tcsfile);
+      return KATCP_RESULT_FAIL;
+    }
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "no clock file specified defaulting to %s", TBS_RFCLK_FILE);
+    tcsfile = TBS_RFCLK_FILE;
+  }
+
+  len = strlen(tcsfile) + 1 + strlen(tr->r_bof_dir) + 1;
+  fnamebuf = malloc(len); // TODO: no free called on this...
+  if (fnamebuf == NULL) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to allocate %d bytes", len);
+    return KATCP_RESULT_FAIL;
+  }
+
+  snprintf(fnamebuf, len, "%s/%s", tr->r_bof_dir, tcsfile);
+  fnamebuf[len - 1] = '\0';
+
+  // parse port
+  if(argc > 2){
+    port = arg_unsigned_long_katcp(d, 2);
     if(sane_port_tbs(d, port) < 0){
       return KATCP_RESULT_INVALID;
     }
   }
 
-  if(argc > 2){
-    expected = arg_unsigned_long_katcp(d, 2);
+  // parse expected length and timeout
+  if(argc > 3){
+    expected = arg_unsigned_long_katcp(d, 3);
     log_message_katcp(d, KATCP_LEVEL_DEBUG, NULL, "expected length is %u bytes", expected);
-    if(argc > 3){
-      timeout = arg_unsigned_long_katcp(d, 3);
+    if(argc > 4){
+      timeout = arg_unsigned_long_katcp(d, 4);
       log_message_katcp(d, KATCP_LEVEL_DEBUG, NULL, "user requested a timeout of %us", timeout);
     }
   }
 
-  nx = find_notice_katcp(d, TBS_RFCLK_FILE);
+  /* call sequence ot upload */
+  nx = find_notice_katcp(d, TBS_RFCLK_UPLOAD);
   if(nx){
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "another upload already seems in progress, halting this attempt");
     return KATCP_RESULT_FAIL;
   }
 
-  nx = create_notice_katcp(d, TBS_RFCLK_FILE, 0);
+  nx = create_notice_katcp(d, TBS_RFCLK_UPLOAD, 0);
   if(nx == NULL){
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to create notification logic to trigger when upload completes");
     return KATCP_RESULT_FAIL;
   }
 
   int program = 1;
-  pd = create_port_data_tbs(d, TBS_RFCLK_FILE, port, program, expected, timeout, TBS_FORMAT_ANY, TBS_DEL_NEVER); //TBS_DEL_ALWAYS);
+  pd = create_port_data_tbs(d, fnamebuf, port, program, expected, timeout, TBS_FORMAT_ANY, TBS_DEL_NEVER); //TBS_DEL_ALWAYS);
 
   if (pd == NULL){
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "%s: couldn't create port data", __func__);
@@ -1274,7 +1439,7 @@ int upload_rfclk_config_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_FAIL;
   }
 
-  url = create_exec_kurl_katcp("rfclk_upload");
+  url = create_exec_kurl_katcp(TBS_RFCLK_UPLOAD);
   if (url == NULL){
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "%s: could not create kurl", __func__);
     destroy_port_data_tbs(d, pd, 1);

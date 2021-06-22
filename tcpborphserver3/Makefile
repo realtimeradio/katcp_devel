@@ -7,7 +7,7 @@ include ../Makefile.inc
 INC = -I$(KATCP)
 INC += -I$(RFDC)
 #LIB = -L$(KATCP) -lkatcp -ldl -lz -lmagic
-LIB = -L$(SYSROOT)/lib -L$(SYSROOT)/usr/lib -L$(KATCP) -lkatcp -ldl -lz -lrfdc
+LIB = -L$(SYSROOT)/lib -L$(SYSROOT)/usr/lib -L$(KATCP) -lkatcp -ldl -lz -lrfdc -lmetal
 #CFLAGS += -fPIC
 CFLAGS += -ggdb
 #CFLAGS += -DDEBUG=2
@@ -19,7 +19,7 @@ CFLAGS += -ggdb
 #CFLAGS += -DINTERNAL_HWMON
 
 SERVER = tcpborphserver3
-SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c phy.c rfsoc.c mcb.c
+SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c phy.c alpaca_i2c_utils.c alpaca_rfclks.c rfsoc.c
 
 OBJ = $(patsubst %.c,%.o,$(SRC))
 all: $(SERVER)

@@ -11,8 +11,6 @@
 #define TBS_MODE_RAW        0 
 #define TBS_MODE_RAW_NAME  "raw"
 
-#define TBS_RFCLK_FILE     "/lib/firmware/rfpll.txt"
-
 #ifdef DEBUG
 #define TBS_LOGFILE        "tcpborphserver3.log"
 #else
@@ -64,6 +62,7 @@ int status_fpga_tbs(struct katcp_dispatch *d, int status);
 int map_raw_tbs(struct katcp_dispatch *d);
 unsigned int infer_fpga_range(struct katcp_dispatch *d);
 
+#include "rfsoc.h"
 
 #define GETAP_IP_BUFFER         20
 #define GETAP_MAC_BUFFER        18
@@ -235,6 +234,8 @@ struct tbs_raw
   struct avl_tree *r_meta;
 
   char *r_lkey;
+
+  struct tbs_rfdc *r_rfdc;
 };
 
 struct meta_entry
@@ -326,7 +327,7 @@ int upload_program_cmd(struct katcp_dispatch *d, int argc);
 int upload_filesystem_cmd(struct katcp_dispatch *d, int argc);
 int upload_bin_cmd(struct katcp_dispatch *d, int argc);
 
-int upload_rfclk_config_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_upload_rfclk_cmd(struct katcp_dispatch *d, int argc);
 
 #if 0
 int run_fpg_generic(struct katcp_dispatch *d, struct katcp_notice *n, void *data);
