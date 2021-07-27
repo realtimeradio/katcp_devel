@@ -1,5 +1,6 @@
 KATCP ?= ../katcp
 RFDC ?= ../rfdc
+RFSOC_PLATFORM ?=
 SYSROOT ?= ../sysroot
 
 include ../Makefile.inc
@@ -32,7 +33,7 @@ clean:
 	$(RM) -f $(SERVER) *.o test-*
 
 %.o: %.c
-	$(CC) $(CFLAGS) --sysroot=$(SYSROOT) -c $< -o $@ $(INC)
+	$(CC) $(CFLAGS) --sysroot=$(SYSROOT) $(RFSOC_PLATFORM) -c $< -o $@ $(INC)
 
 install: all
 	$(INSTALL) $(SERVER) $(PREFIX)/sbin

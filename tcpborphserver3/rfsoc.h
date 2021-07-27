@@ -11,30 +11,28 @@
 #define TBS_RFCLK_FILE "rfpll.txt"           // lmk/lmx configuration file
 #define TBS_RFCLK_UPLOAD "rfdc-upload-rfclk"
 
-#define TBS_DTBO_NAME "casper"
-#define TBS_DTBO_FILE "tcpborphserver.dtbo" //"/lib/firmware/tcpborphserver.dtbo"  // device tree binary overlay
-#define TBS_DTBO_BASE "/configfs/device-tree/overlays/%s"  // path to create device tree overlay
-#define TBS_DTBO_STAT "/configfs/device-tree/overlays/%s/status"  // path to create device tree overlay
-#define TBS_DTBO_PATH "/configfs/device-tree/overlays/%s/path"  // path to create device tree overlay
+#define TBS_DTBO_NAME "casper"                                    // name of the overlay to create at "TBS_DTBO_BASE"
+#define TBS_DTBO_FILE "tcpborphserver.dtbo"                       // tbs device tree overlay filename
+#define TBS_DTBO_BASE "/configfs/device-tree/overlays/%s"         // base dto `sysfs` path
+#define TBS_DTBO_STAT "/configfs/device-tree/overlays/%s/status"  // read for overlay status
+#define TBS_DTBO_PATH "/configfs/device-tree/overlays/%s/path"    // write the path of the overlay to apply to this location
 #define RFDC_META_KEY  "rfdc"
 
 #define RFDC_UPLOAD_DTO 0
 #define RFDC_UPLOAD_LMK 1
 #define RFDC_UPLOAD_LMX 2
 
-// TODO: need to be part/gen smart should look at driver stuff, I want to
-// rememebr it is built-in
+// TODO: need to be part/gen smart
 #define NUM_TILES 4
 
 struct tbs_rfdc {
 
   XRFdc *xrfdc;
   struct metal_device **metal_dev;
-  int initialized; // rfdc driver successfully completed, found rfdc driver has a built-in member called `IsReady`, should move to using that.
+  // TODO: rfdc driver successfully completed, found rfdc driver has a built-in
+  // member called `IsReady`, should move to using that.
+  int initialized;
 
-  // was thinking to have a staging variable for clock programming?
-  int clk_staged; //clk_programmed?
-};
 
 struct tbs_rfdc *create_tbs_rfdc();
 void destroy_tbs_rfdc(struct katcp_dispatch *d, struct tbs_rfdc *rfdc);
@@ -47,5 +45,6 @@ int rfdc_status_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc);
+int tbs_dto_cmd(struct katcp_dispatch *d, int argc);
 
 #endif // RFSOC_H_

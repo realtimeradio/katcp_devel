@@ -3204,6 +3204,7 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-status", "report tile status, state, pll info (?rfdc-status)", &rfdc_status_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi tile synchronization (?rfdc-run-mts)", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-update-nco", "update nco frequency (?rfdc-update-nco)", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?dto", "manage device tree overlay (?dto apply|remove)", &tbs_dto_cmd, 0, TBS_MODE_RAW);
 
 
   tr->r_chassis = chassis_init_tbs(d, TBS_ROACH_CHASSIS);

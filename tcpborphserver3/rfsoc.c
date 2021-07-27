@@ -18,6 +18,7 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   int result;
   struct tbs_raw *tr;
   char* pll;
+  int pll_type;
   char* tcsfile;
   FILE* fileptr;
   char* buffer;
@@ -25,8 +26,6 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   struct stat st;
   uint32_t* clkconfig;
 
-  //TODO: on most devices (zcu216/208 specifically) we will only get so far
-  //without the device tree overlay should we stop if not loaded?
   tr = get_mode_katcp(d, TBS_MODE_RAW);
   if(tr == NULL) {
     return KATCP_RESULT_FAIL;
@@ -44,14 +43,15 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_FAIL;
   }
 
-  // TODO: any interest in changing logic to set parameter types based on pll
-  // selection here (reg cnt, lmk select, perhaps a poiner to a function call?)
   if (strcmp(pll, "lmk") == 0) {
     log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "will program lmk");
+    pll_type = 0;
   } else if (strcmp(pll, "lmx") == 0) {
     log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "will program lmx2594");
+    pll_type = 1;
   } else {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unrecognized rfpll option %s", pll);
+    pll_type = -1;
     return KATCP_RESULT_INVALID;
   }
 
@@ -74,7 +74,7 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   }
 
   len = strlen(tcsfile) + 1 + strlen(tr->r_bof_dir) + 1;
-  buffer = malloc(len); // TODO: there is no call free on this...
+  buffer = malloc(len);
   if (buffer == NULL) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to allocate %d bytes", len);
     return KATCP_RESULT_FAIL;
@@ -84,8 +84,10 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   buffer[len - 1] = '\0';
 
   if (stat(buffer, &st) != 0) {
-    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "clock config file %s does not exist", buffer);
-    return KATCP_RESULT_FAIL;
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "clock config file %s does not exist", buffer);
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "clock config file %s does not exist", buffer);
+    free(buffer);
+    return KATCP_RESULT_OWN;
   }
 
   log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "attempting to program %s with %s", pll, buffer);
@@ -93,35 +95,38 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%s", buffer);
 
   fileptr = fopen(buffer, "r");
+  free(buffer);
   if (fileptr == NULL) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to open %s", tcsfile);
     return KATCP_RESULT_FAIL;
   }
 
-  /* can now start to program pll, but there are different type var we need to collect */
-  // target i2c device (I2C_DEV_CLK104, I2C_DEV_LMK_SPI_BRIDGE...)
-  // programming regsiter count (LMK/LMX_REG_CNT)
-  // sdo mux sel (LMK_SDO_SS, LMX_SDO..)
-  // iox setup (most different and difficult to abstract...)
+  int prg_cnt = (pll_type == 0) ? LMK_REG_CNT : LMX2594_REG_CNT;
+  int pkt_len = (pll_type == 0) ? LMK_PKT_SIZE: LMX_PKT_SIZE;
 
-  // could parse and readtcs closer to call to program, that way `free(clkconfig)` isn't everywhere
-  if (strcmp(pll, "lmk") == 0) {
-    clkconfig = readtcs(fileptr, LMK_REG_CNT, 0);
-  } else {
-    clkconfig = readtcs(fileptr, LMX2594_REG_CNT, 1);
-  }
+  clkconfig = readtcs(fileptr, prg_cnt, pll_type);
   if (clkconfig == NULL) {
     log_message_katcp(d, KATCP_LEVEL_FATAL, NULL, "problem parsing clock file. Wrong file for requested pll chip, corrupt file, or could not allocate array");
     return KATCP_RESULT_FAIL;
   }
 
+  /* An alternate approach within katcp/tbs is to use katcp jobs to run a system
+   * executable and each rfsoc platform can have their own i2c_util binary built
+   *
+   * Another idea is to create something similar to the alpaca_i2c_utils with an
+   * rclk struct managing the rfpll's present
+   */
+
   // init i2c
   init_i2c_bus();
 #if PLATFORM == ZCU216 // || PLATFORM == ZCU208
-  // init spi bridge
   init_i2c_dev(I2C_DEV_CLK104);
-  // init fabric gpio for SDIO readback (no IO Expander on zcu216/208)
-  init_clk104_gpio(320);
+  // TODO: 510 is when base platform fabric design is in the base tree, but
+  // this will change if jasper fully adopts the device tree overlay separating
+  // the PL from the device tree when the kernel is build. This will then change
+  // as the overlay is applied. Would need to know how to deterministly set or
+  // receive the kernel message stating what it was applied as.
+  init_clk104_gpio(510);
 
   // set sdo mux to lmk
   result = set_sdo_mux(LMK_MUX_SEL);
@@ -132,8 +137,8 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_FAIL;
   }
 
-  // configure spi device
-  uint8_t spi_config[2] = {0xf0, 0x03}; // spi bridge configuration packet
+  // configure spi bridge operation mode, clk frequency
+  uint8_t spi_config[2] = {0xf0, 0x03};
   result = i2c_write(I2C_DEV_CLK104, spi_config, 2);
   if (result == XRFDC_FAILURE) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure clk104 spi bridge");
@@ -142,11 +147,12 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   }
 
   // program pll
-  if (strcmp(pll, "lmk") == 0) {
-    result = prog_pll(I2C_DEV_CLK104, LMK_SDO_SS, clkconfig, LMK_REG_CNT);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "programming zcu216 pll\n");
+  if (pll_type == 0) {
+    result = prog_pll(I2C_DEV_CLK104, LMK_SDO_SS, clkconfig, prg_cnt, pkt_len);
   } else {
     // configure clk104 adc lmx2594 to tile 225
-    result = prog_pll(I2C_DEV_CLK104, LMX_ADC_SDO_SS, clkconfig, LMX2594_REG_CNT);
+    result = prog_pll(I2C_DEV_CLK104, LMX_SDO_SS224_225, clkconfig, prg_cnt, pkt_len);
   }
 
   if (result == XRFDC_FAILURE) {
@@ -154,16 +160,16 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
     free(clkconfig);
     return KATCP_RESULT_FAIL;
   }
+
   // close devices
   close_i2c_dev(I2C_DEV_CLK104);
-
 #elif PLATFORM == ZRF16
   init_i2c_dev(I2C_DEV_LMK_SPI_BRIDGE);
   init_i2c_dev(I2C_DEV_LMX_SPI_BRIDGE);
   init_i2c_dev(I2C_DEV_IOX);
 
-  // configure spi devices
-  uint8_t spi_config[2] = {0xf0, 0x03}; // spi bridge configuration packet
+  // configure spi bridges operation mode, clk frequency
+  uint8_t spi_config[2] = {0xf0, 0x03};
   result = i2c_write(I2C_DEV_LMK_SPI_BRIDGE, spi_config, 2);
   if (result == XRFDC_FAILURE) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure lmk spi bridge");
@@ -178,9 +184,8 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_FAIL;
   }
 
-  // configure io expander
-  // set IOX_MUX_SEL bits 0 to configure as outputs, use lmx tile 224/225 macro since we know it is zero
-  uint8_t iox_config[2] = {IOX_CONF_REG, (0xff & LMX_ADC_MUX_SEL_224_225)}; // iox configuration packet
+  // configure io expander power-on defaults are inputs, set zero for outputs
+  uint8_t iox_config[2] = {IOX_CONF_REG, (0xff & ~MUX_SEL_BASE)};
   result = i2c_write(I2C_DEV_IOX, iox_config, 2);
   if (result == XRFDC_FAILURE) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure iox");
@@ -188,8 +193,7 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_FAIL;
   }
 
-  // write to the GPIO reg to lower the outputs since power-on default is high
-  // (use the same data from iox_config[1] packet to do this since already zeros)
+  // init iox slection, power-on defaults are high, set low instead
   uint8_t iox_gpio[2] = {IOX_GPIO_REG, iox_config[1]};
   result = i2c_write(I2C_DEV_IOX, iox_gpio, 2);
   if (result == XRFDC_FAILURE) {
@@ -199,18 +203,125 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   }
 
   // program pll
-  if (strcmp(pll, "lmk") == 0) {
-    result = prog_pll(I2C_DEV_CLMK_SPI_BRIDGE, LMK_SDO_SS, clkconfig, LMK_REG_CNT);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "programming zrf16 pll\n");
+  if (pll_type == 0) {
+    result = prog_pll(I2C_DEV_LMK_SPI_BRIDGE, LMK_SDO_SS, clkconfig, prg_cnt, pkt_len);
   } else {
     // lmx for tile 224/225
-    result = prog_pll(I2C_DEV_LMX_SPI_BRIDGE, LMX_SDO_SS224_225, LMX_ARRAY, LMX2594_REG_CNT);
+    result = prog_pll(I2C_DEV_LMX_SPI_BRIDGE, LMX_SDO_SS224_225, clkconfig, prg_cnt, pkt_len);
     if (result == XRFDC_FAILURE) {
-      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program pll");
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program first adc lmk pll");
       free(clkconfig);
       return KATCP_RESULT_FAIL;
     }
     // lmx for tile 226/227
-    result = prog_pll(I2C_DEV_LMX_SPI_BRIDGE, LMX_SDO_SS226_227, LMX_ARRAY, LMX2594_REG_CNT);
+    result = prog_pll(I2C_DEV_LMX_SPI_BRIDGE, LMX_SDO_SS226_227, clkconfig, prg_cnt, pkt_len);
+  }
+
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program second adc lmk pll");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+  //close devices
+  close_i2c_dev(I2C_DEV_LMK_SPI_BRIDGE);
+  close_i2c_dev(I2C_DEV_LMX_SPI_BRIDGE);
+  close_i2c_dev(I2C_DEV_IOX);
+#elif PLATFORM == ZCU111
+  init_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
+  init_i2c_dev(I2C_DEV_IOX);
+
+  // configure spi bridge operation mode, clk frequency
+  uint8_t spi_config[2] = {0xf0, 0x03};
+  result = i2c_write(I2C_DEV_PLL_SPI_BRIDGE, spi_config, 2);
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure pll spi bridge");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+  // configure io expander power-on defaults are inputs, set zero for outputs
+  uint8_t iox_config[2] = {IOX_CONF_REG, (0xff & ~MUX_SEL_BASE)};
+  result = i2c_write(I2C_DEV_IOX, iox_config, 2);
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure iox");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+  // init iox slection, power-on defaults are high, set low instead
+  uint8_t iox_gpio[2] = {IOX_GPIO_REG, iox_config[1]};
+  result = i2c_write(I2C_DEV_IOX, iox_gpio, 2);
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure iox");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+  // program pll
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "programming zcu111 pll\n");
+  if (pll_type == 0) {
+    result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMK_SDO_SS, clkconfig, prg_cnt, pkt_len);
+  } else {
+    // lmk for tile 224/225
+    result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS224_225, clkconfig, prg_cnt, pkt_len);
+    if (result == XRFDC_FAILURE) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program first adc lmk pll");
+      free(clkconfig);
+      return KATCP_RESULT_FAIL;
+    }
+    // lmk for tile 226/227
+    result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS226_227, clkconfig, prg_cnt, pkt_len);
+  }
+
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program second adc lmk pll");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+  close_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
+  close_i2c_dev(I2C_DEV_IOX);
+#elif PLATFORM == RFSoC2x2
+  init_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
+  init_i2c_dev(I2C_DEV_IOX);
+
+  // configure spi bridge operation mode, clk frequency
+  uint8_t spi_config[2] = {0xf0, 0x03};
+  result = i2c_write(I2C_DEV_PLL_SPI_BRIDGE, spi_config, 2);
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure pll spi bridge");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+  // configure io expander power-on defaults are inputs, set zero for outputs
+  uint8_t iox_config[2] = {IOX_CONF_REG, (0xff & ~MUX_SEL_BASE)};
+  result = i2c_write(I2C_DEV_IOX, iox_config, 2);
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure iox");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+  // init iox slection, power-on defaults are high, set low instead
+  uint8_t iox_gpio[2] = {IOX_GPIO_REG, iox_config[1]};
+  result = i2c_write(I2C_DEV_IOX, iox_gpio, 2);
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not configure iox");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+  //program pll
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "programming rfsoc2x2 pll\n");
+  if (pll_type == 0) {
+    result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMK_SDO_SS, clkconfig, prg_cnt, pkt_len);
+  } else {
+    // rfsoc2x2 only supports two inputs with one lmx2594 driving adc tiles 224/226
+    // despite the SDO slave select macro, this configures the one lmx2594's for both tiles
+    result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS224_225, clkconfig, prg_cnt, pkt_len);
   }
 
   if (result == XRFDC_FAILURE) {
@@ -219,9 +330,8 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_FAIL;
   }
 
-  //close devices
-  close_i2c_dev(I2C_DEV_LMK_SPI_BRIDGE);
-  close_i2c_dev(I2C_DEV_LMX_SPI_BRIDGE);
+  // close devices
+  close_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
   close_i2c_dev(I2C_DEV_IOX);
 #endif
   close_i2c_bus();
@@ -329,11 +439,7 @@ int rfdc_init_cmd(struct katcp_dispatch *d, int argc) {
   struct avl_node *an;
   struct meta_entry *rfdc_meta_data;
   int i, middle;
-  // applying dtbo
-  struct stat st;
-  char overlay_path[128];
-  int fd_dto, rd, wr;
-  char overlay_status[16] = {0};
+
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
   if(tr == NULL) {
@@ -394,70 +500,6 @@ int rfdc_init_cmd(struct katcp_dispatch *d, int argc) {
   // fpga programmed, rfdc is seen in the design, not yet setup so begin to initialize
   rfdc = tr->r_rfdc;
 
-  /* apply the dtbo */
-  // This logic is a pretty buggy, and possibly not a good idea to make a part
-  // of the rfsoc code. But, at the very least as implemented now, short-circuiting and returning `!ok`
-  // is not the correct thing to do for a few reason. First, consider starting
-  // tcpborphserver with the dtbo already applied (like I do when building new
-  // borph server executables) if we short circuit the xrfdc driver was mallo'd
-  // but because we returned `!ok` before we called `init_rfdc` nothing
-  // meaningful happened we wil hang on subsequent methods. Second, what if the
-  // dto we load doesn't contain the rfdc? So just checking if a casper dtbo is
-  // applied is not sufficeint. Instead, we woudl need to actually look in the
-  // device tree by looking at the `of nodes`. The rfdc driver init code will
-  // does this already and will fail out. And since it will fail out why not
-  // just let the driver do the check? Instead, applying the dto should probably
-  // just be an auxilliary command...
-  // But it is worth thinking about the initial startup sequence (how can the
-  // client know the case where the dto is applied)
-
-  sprintf(overlay_path, TBS_DTBO_BASE, TBS_DTBO_NAME);
-  if(stat(overlay_path, &st) == 0){
-    if (S_ISDIR(st.st_mode)) {
-      log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "device tree overlay already exists");
-      //return KATCP_RESULT_OK; //buggy see line 398 comment
-    }
-  } else {
-    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "creating device tree overlay %s", TBS_DTBO_NAME);
-    result = mkdir(overlay_path, 0755);
-
-    if (result < 0) {
-      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not create device tree overlay");
-      return KATCP_RESULT_FAIL;
-    }
-  }
-
-  // check if a dto has been applied, apply one if not
-  sprintf(overlay_path, TBS_DTBO_STAT, TBS_DTBO_NAME);
-  fd_dto = open(overlay_path, O_RDONLY);
-  if (fd_dto < 0) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not open dto status file for reading");
-    return KATCP_RESULT_FAIL;
-  }
-
-  rd = read(fd_dto, overlay_status, 16);
-  close(fd_dto);
-
-  // note, dto status `applied` does not always mean everything went well, we just assume it had 
-  if (strncmp(overlay_status, "applied", 7) == 0) {
-    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "a dto is already applied");
-    //return KATCP_RESULT_OK; //buggy see line 398 comment
-  } else {
-    sprintf(overlay_path, TBS_DTBO_PATH, TBS_DTBO_NAME);
-    fd_dto = open(overlay_path, O_RDWR);
-    if (fd_dto < 0) {
-      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not open dto path for writing new overlay");
-      return KATCP_RESULT_FAIL;
-    }
-
-    wr = write(fd_dto, TBS_DTBO_FILE, sizeof(TBS_DTBO_FILE));
-    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "new dto applied");
-  }
-
-  /*
-     should potentially make the above implementation of applying a dto its own
-     method for improving support for dto universally on 7series/mpsoc
-  */
   //rfdc->dto_loaded = 1;
   //if (rfdc->dto_loaded == 0) {
   //  log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "device tree overlay for rfdc not present");
@@ -475,17 +517,200 @@ int rfdc_init_cmd(struct katcp_dispatch *d, int argc) {
   return KATCP_RESULT_OK;
 }
 
-int apply_dto() {
-  // implemented for now in `rfdc_init_cmd`
-  return 0;
-}
+/************************************************************************************************/
 
-int apply_dto_cmd(struct katcp_dispatch *d, int argc) {
+/*
+ * Manage tbs dto (?dto apply|remove)
+ *
+ * 'apply' looks for the tbs dtbo file (previously uploaded) and will apply it.
+ * This will remove any currently applied tbs overlay as the assumption is that
+ * the primary use case will be followed by a reprogramming of the PL and the
+ * user will want to apply one instead of having first remove any active
+ * overlays and then apply
+ *
+ * 'remove' will look for any active tbs dto and remove it, nothing otherwise.
+ *
+ * ideally, applying the dto is the preferred approach to programming the PL but
+ * not yet the programming entry need to develop towards that.
+ *
+ */
+int tbs_dto_cmd(struct katcp_dispatch *d, int argc) {
 
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "not implemented");
+  struct tbs_raw *tr;
+  char* dto_action;
+  // for dto
+  struct stat st;
+  char overlay_path[128];
+  int result, fd_dto, rd, wr;
+  char overlay_status[16] = {0};
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  if (argc <= 1) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify option, apply|remove");
+    return KATCP_RESULT_INVALID;
+  }
+
+  dto_action = arg_string_katcp(d, 1);
+  if (dto_action == NULL) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unable to resolve pll type");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // check for dto path in configfs
+  int dto_dirpath_exist = 0;
+  sprintf(overlay_path, TBS_DTBO_BASE, TBS_DTBO_NAME);
+  if(stat(overlay_path, &st) == 0) {
+    if (S_ISDIR(st.st_mode)) {
+      log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "overlay path already exists");
+      dto_dirpath_exist = 1;
+    }
+  }
+
+  // perform dto action
+  if (strcmp(dto_action, "apply") == 0) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "will apply overlay");
+    if(dto_dirpath_exist) {
+      log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "removing active overlay first");
+      result = rmdir(overlay_path);
+      if (result < 0) {
+        log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "error removing overlay");
+        return KATCP_RESULT_FAIL;
+      }
+    }
+
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "creating dto %s", TBS_DTBO_NAME);
+    result = mkdir(overlay_path, 0755);
+    if (result < 0) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not create device tree overlay");
+      return KATCP_RESULT_FAIL;
+    }
+
+    sprintf(overlay_path, TBS_DTBO_PATH, TBS_DTBO_NAME);
+    fd_dto = open(overlay_path, O_RDWR);
+    if (fd_dto < 0) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not open dto path for writing new overlay");
+      return KATCP_RESULT_FAIL;
+    }
+
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "writing dto");
+    wr = write(fd_dto, TBS_DTBO_FILE, sizeof(TBS_DTBO_FILE));
+
+    // check status of applying dto
+    // note: `applied` does not always mean everything went well. Reporting
+    // status to user but we assume no errors if result is `applied`
+    sprintf(overlay_path, TBS_DTBO_STAT, TBS_DTBO_NAME);
+    fd_dto = open(overlay_path, O_RDONLY);
+    if (fd_dto < 0) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not open dto status file for reading");
+      return KATCP_RESULT_FAIL;
+    }
+
+    rd = read(fd_dto, overlay_status, 16); // 16, as it seems to be the longest str to return
+    close(fd_dto);
+
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%s", overlay_status);
+
+    if (strncmp(overlay_status, "applied", 7) != 0) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "error applying dto");
+      return KATCP_RESULT_FAIL;
+    }
+
+  } else if (strcmp(dto_action, "remove") == 0) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "will remove overlay");
+    if (dto_dirpath_exist) {
+      result = rmdir(overlay_path);
+      if (result < 0) {
+        log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "error removing overlay");
+      }
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "removed");
+    } else {
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "no dto to remove");
+    }
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "unrecognized dto action option %s", dto_action);
+    return KATCP_RESULT_INVALID;
+  }
 
   return KATCP_RESULT_OK;
 }
+
+/*
+ * creates tbs device tree overlay
+ *
+ * check for tbs dto, if one exists and the status is applied inform user must
+ * remove before applying. Otherwise, creates a the tbs overlay.
+ *
+ * not used, an aux. implementation should we need it
+ */
+int create_overlay_tbs(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  // for dto
+  struct stat st;
+  char overlay_path[128];
+  int result, fd_dto, rd, wr;
+  char overlay_status[16] = {0};
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  // check for dto path in configfs
+  sprintf(overlay_path, TBS_DTBO_BASE, TBS_DTBO_NAME);
+  if(stat(overlay_path, &st) == 0){
+    if (S_ISDIR(st.st_mode)) {
+      log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "overlay path already exists");
+    }
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "creating dto %s", TBS_DTBO_NAME);
+    result = mkdir(overlay_path, 0755);
+
+    if (result < 0) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not create device tree overlay");
+      return KATCP_RESULT_FAIL;
+    }
+  }
+
+  // check if a dto has been applied, apply one if not
+  sprintf(overlay_path, TBS_DTBO_STAT, TBS_DTBO_NAME);
+  fd_dto = open(overlay_path, O_RDONLY);
+  if (fd_dto < 0) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not open dto status file for reading");
+    return KATCP_RESULT_FAIL;
+  }
+
+  rd = read(fd_dto, overlay_status, 16); // 16, as it seems to be the longest str to return
+  close(fd_dto);
+
+  // note, dto status `applied` does not always mean everything went well, we just assume it had 
+  if (strncmp(overlay_status, "applied", 7) == 0) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "a dto already exists, should remove before apply");
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "dto already applied, should remove before apply", overlay_status);
+  } else {
+    sprintf(overlay_path, TBS_DTBO_PATH, TBS_DTBO_NAME);
+    fd_dto = open(overlay_path, O_RDWR);
+    if (fd_dto < 0) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not open dto path for writing new overlay");
+      return KATCP_RESULT_FAIL;
+    }
+
+    wr = write(fd_dto, TBS_DTBO_FILE, sizeof(TBS_DTBO_FILE));
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "new dto applied");
+  }
+
+  return KATCP_RESULT_OK;
+
+}
+
+/************************************************************************************************/
 
 int rfdc_status_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
@@ -501,8 +726,8 @@ int rfdc_status_cmd(struct katcp_dispatch *d, int argc) {
   // TODO: rfdc driver has a built-in `IsReady` to indicate driver
   // initialization. Should use that instead.
   if (!rfdc->initialized) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "rfdc driver not initialized");
-    return KATCP_RESULT_FAIL;
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
   }
 
   XRFdc_GetIPStatus(rfdc->xrfdc, &ip_status);
