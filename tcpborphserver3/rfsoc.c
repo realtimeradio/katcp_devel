@@ -354,10 +354,9 @@ struct tbs_rfdc *create_tbs_rfdc() {
   rfdc->xrfdc = malloc(sizeof(XRFdc));
   rfdc->metal_dev = malloc(sizeof(*(rfdc->metal_dev)));
 
-  // TODO: Just random state variables we I should probably not really work in
-  // to the implementation unless I need to
+  // TODO: rfdc driver successfully completed, found rfdc driver has a built-in
+  // member called `IsReady`, should move to using that.
   rfdc->initialized = 0;
-  rfdc->clk_staged = 0;
 
   return rfdc;
 
