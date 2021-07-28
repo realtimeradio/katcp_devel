@@ -24,6 +24,7 @@
 
 // TODO: need to be part/gen smart
 #define NUM_TILES 4
+#define NUM_BLKS  4
 
 struct tbs_rfdc {
 
@@ -32,7 +33,7 @@ struct tbs_rfdc {
   // TODO: rfdc driver successfully completed, found rfdc driver has a built-in
   // member called `IsReady`, should move to using that.
   int initialized;
-
+};
 
 struct tbs_rfdc *create_tbs_rfdc();
 void destroy_tbs_rfdc(struct katcp_dispatch *d, struct tbs_rfdc *rfdc);
@@ -42,6 +43,8 @@ int init_rfdc(struct katcp_dispatch *d, struct tbs_rfdc *rfdc);
 // katcp api commands
 int rfdc_init_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_status_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_dsa_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc);

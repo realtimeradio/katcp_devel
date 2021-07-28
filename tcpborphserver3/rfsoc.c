@@ -342,7 +342,6 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   return KATCP_RESULT_OK;
 }
 
-
 /***************************************************************************************/
 struct tbs_rfdc *create_tbs_rfdc() {
 
@@ -378,7 +377,6 @@ void destroy_tbs_rfdc(struct katcp_dispatch *d, struct tbs_rfdc *rfdc) {
 }
 
 /***************************************************************************************/
-
 
 int init_rfdc(struct katcp_dispatch *d, struct tbs_rfdc *rfdc) {
 
@@ -755,5 +753,160 @@ int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
 
   log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "nco update not implemented");
 
+  return KATCP_RESULT_OK;
+}
+
+/************************************************************************************************/
+
+/*
+ * (?rfdc-set-dsa adc-tile adc-blk dsa-in-dB)
+ *
+ *
+ */
+int rfdc_set_dsa_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  float atten;
+  float max_atten, min_atten;
+  unsigned int tile, blk;
+  XRFdc_IPStatus ip_status;
+  XRFdc_DSA_Settings dsa;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and desired atten in dB");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile > NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk > NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  atten = arg_double_katcp(d, 3);
+
+  // ES1 silicon has max atten of 11 dB, productino silicon can support up to 27 dB
+  //max_atten = XRFDC_MAX_ATTEN(rfdc->xrfdc->RFdc_Config.SiRevision); //TODO: using v8_0 need to better upgrade to v8_1
+  max_atten = (rfdc->xrfdc->RFdc_Config.SiRevision == 0) ? 11.0 : 27.0; //XRFDC_MAX_ATTEN(rfdc->xrfdc->RFdc_Config.SiRevision);
+  min_atten = 0;
+  if (atten > max_atten) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid attenuation setting %.1f, max supported atten is %.1f dB",
+      atten, max_atten);
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (atten < min_atten) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid attenuation setting -%.1f, min supported atten is %.1f dB",
+      atten, min_atten);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // set the dsa
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set dsa for tile: %d, blk: %d to %.1f dB", tile, blk, atten);
+  XRFdc_GetIPStatus(rfdc->xrfdc, &ip_status);
+
+  if (rfdc->xrfdc->RFdc_Config.IPType >= XRFDC_GEN3) {
+    if (XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+      dsa.Attenuation = atten;
+      result = XRFdc_SetDSA(rfdc->xrfdc, tile, blk, &dsa);
+      if (result != XRFDC_SUCCESS) {
+        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set dsa");
+        return KATCP_RESULT_FAIL;
+      }
+
+      // read back the attenuation
+      result = XRFdc_GetDSA(rfdc->xrfdc, tile, blk, &dsa);
+      if (result != XRFDC_SUCCESS) {
+        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to read dsa after write");
+        return KATCP_RESULT_FAIL;
+      }
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ADC:%d, BLK:%d, DSA: %1.f dB",
+        tile, blk, dsa.Attenuation);
+    } else {
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ADC:%d, BLK:%d (disabled)", tile, blk);
+    }
+  } else {
+    // not supported
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "dsa not supported on this rfsoc");
+    return KATCP_RESULT_INVALID;
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+/************************************************************************************************/
+
+int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  XRFdc_IPStatus ip_status;
+  XRFdc_DSA_Settings dsa;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  XRFdc_GetIPStatus(rfdc->xrfdc, &ip_status);
+
+  if (rfdc->xrfdc->RFdc_Config.IPType >= XRFDC_GEN3) {
+    for (int tile = 0; tile < NUM_TILES; tile++) {
+      if (ip_status.ADCTileStatus[tile].IsEnabled == 1) {
+        for (int blk = 0; blk < NUM_BLKS; blk++) {
+          if (XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+            result = XRFdc_GetDSA(rfdc->xrfdc, tile, blk, &dsa);
+            if (result != XRFDC_SUCCESS) {
+              // xrfdc get dsa failed
+              log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get dsa");
+              return KATCP_RESULT_FAIL;
+            }
+            prepend_inform_katcp(d);
+            append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ADC:%d, BLK:%d, DSA: %1.f dB",
+              tile, blk, dsa.Attenuation);
+          } else {
+            log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "ADC:%d, BLK:%d (disabled)", tile, blk);
+          }
+        }
+      } else {
+        log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "ADC:%d (disabled)", tile);
+      }
+    }
+  } else {
+    // not supported
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "dsa not supported on this rfsoc");
+    return KATCP_RESULT_INVALID;
+  }
   return KATCP_RESULT_OK;
 }
