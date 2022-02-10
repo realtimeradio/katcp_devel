@@ -6,9 +6,16 @@ SYSROOT ?= ../sysroot
 include ../Makefile.inc
 
 INC = -I$(KATCP)
+ifdef IS_RFSOC
 INC += -I$(RFDC)
+endif
+
 #LIB = -L$(KATCP) -lkatcp -ldl -lz -lmagic
-LIB = -L$(SYSROOT)/lib -L$(SYSROOT)/usr/lib -L$(KATCP) -lkatcp -ldl -lz -lrfdc -lmetal
+LIB = -L$(SYSROOT)/lib -L$(SYSROOT)/usr/lib -L$(KATCP) -lkatcp -ldl -lz
+ifdef IS_RFSOC
+LIB += -lrfdc -lmetal
+endif
+
 #CFLAGS += -fPIC
 CFLAGS += -ggdb
 #CFLAGS += -DDEBUG=2
@@ -20,7 +27,10 @@ CFLAGS += -ggdb
 #CFLAGS += -DINTERNAL_HWMON
 
 SERVER = tcpborphserver3
-SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c phy.c alpaca_i2c_utils.c alpaca_rfclks.c rfsoc.c
+SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c phy.c
+ifdef IS_RFSOC
+SRC += alpaca_i2c_utils.c alpaca_rfclks.c rfsoc.c
+endif
 
 OBJ = $(patsubst %.c,%.o,$(SRC))
 all: $(SERVER)

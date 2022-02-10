@@ -26,7 +26,9 @@
 
 #include "phy.h"
 
+#ifdef IS_RFSOC
 #include "rfsoc.h"
+#endif
 
 #define ARRAY_SIZE 12
 #define DEFAULT_FILENAME    "vsc848x_EDC_FW_1_14.bin"
@@ -2977,12 +2979,14 @@ void destroy_raw_tbs(struct katcp_dispatch *d, struct tbs_raw *tr)
     tr->r_lkey = NULL;
   }
 
+#ifdef IS_RFSOC
   // TODO: destroyed (and created) within the context of "raw" mode, but would
   // move to exit logic when creating rfdc specific mode
   if (tr->r_rfdc) {
     destroy_tbs_rfdc(d, tr->r_rfdc);
     tr->r_rfdc = NULL;
   }
+#endif
 
   free(tr);
 }
@@ -3082,9 +3086,11 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
 
   tr->r_lkey = NULL;
 
+#ifdef IS_RFSOC
   // TODO: created (and destroyed within the context of "raw" but would move
   // this to mode specific activation logic with creation of an rfdc mode
   tr->r_rfdc = create_tbs_rfdc();
+#endif
 
   /* allocate structure elements */
   tr->r_registers = create_avltree();
@@ -3197,6 +3203,7 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_katcp(d, "?capture-stop", "stops a data capture", &capture_stop_cmd);
 
   /* RFSoC devel */
+#ifdef IS_RFSOC
   //result += register_flag_mode_katcp(d, "?rfdc-upload", "upload different configuration products to initialize rfdc (?rfdc-upload dto|lmk|lmx [port [length [timeout]]]", &rfdc_upload, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-upload-rfclk", "upload tics txt register file for programming rf plls (?rfdc-upload-rfclk [tcs-file-name [port [length [timeout]]]])", &rfdc_upload_rfclk_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-progpll", "program onboard plls (?rfdc-progpll lmk|lmx [tcs-file-name])", &rfdc_program_pll_cmd, 0, TBS_MODE_RAW);
@@ -3206,7 +3213,9 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-set-dsa", "set digital step attenuator values (?rfdc-set-dsa tile-num block-num atten-db)", &rfdc_set_dsa_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi tile synchronization (?rfdc-run-mts)", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-update-nco", "update nco frequency (?rfdc-update-nco)", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
+  // JH: I suppose DTO isn't strictly RFSOC, but it lives in rfsoc.c, so....
   result += register_flag_mode_katcp(d, "?dto", "manage device tree overlay (?dto apply|remove)", &tbs_dto_cmd, 0, TBS_MODE_RAW);
+#endif
 
 
   tr->r_chassis = chassis_init_tbs(d, TBS_ROACH_CHASSIS);

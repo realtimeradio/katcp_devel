@@ -62,7 +62,9 @@ int status_fpga_tbs(struct katcp_dispatch *d, int status);
 int map_raw_tbs(struct katcp_dispatch *d);
 unsigned int infer_fpga_range(struct katcp_dispatch *d);
 
+#ifdef IS_RFSOC
 #include "rfsoc.h"
+#endif
 
 #define GETAP_IP_BUFFER         20
 #define GETAP_MAC_BUFFER        18
