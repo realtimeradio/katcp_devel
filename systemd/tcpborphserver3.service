@@ -10,7 +10,7 @@ Description=Tcpborphserver3 Daemon
 Type=forking
 Restart=always
 User=root
-ExecStart=/home/casper/bin/tcpborphserver3
+ExecStart=/usr/local/sbin/tcpborphserver3
 
 [Install]
 WantedBy=multi-user.target
