@@ -1,0 +1,9 @@
+### usage example : $> kcsdplxd -i kcsdplx.init [-f] -l /dev/null ###
+
+?var-declare katcp-duplex-server* string,version
+?var-set katcp-duplex-server 1.0.0-beta
+
+?group-create primary
+?scope global group primary
+
+?listener-create primary 7148 0.0.0.0 primary

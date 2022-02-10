@@ -20,4 +20,6 @@ int tap_multicast_remove_group_cmd(struct katcp_dispatch *d, int argc);
 
 void stop_all_getap(struct katcp_dispatch *d, int final);
 
+int tap_dhcp_cmd(struct katcp_dispatch *d, int argc);
+
 #endif

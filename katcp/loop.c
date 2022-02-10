@@ -30,10 +30,18 @@ int run_katcp(struct katcp_dispatch *d, int server, char *host, int port)
 
 int run_server_katcp(struct katcp_dispatch *d, char *host, int port)
 {
+#if KATCP_EXPERIMENTAL >= 2
+  return run_config_server_flat_katcp(d, NULL, NULL, host, port);
+#else
   return run_config_server_katcp(d, NULL, 1, host, port);
+#endif
 }
 
 int run_multi_server_katcp(struct katcp_dispatch *d, int count, char *host, int port)
 {
+#if KATCP_EXPERIMENTAL >= 2
+  return run_config_server_flat_katcp(d, NULL, NULL, host, port);
+#else
   return run_config_server_katcp(d, NULL, count, host, port);
+#endif
 }

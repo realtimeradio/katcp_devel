@@ -32,13 +32,23 @@ static int vector_sum(int *result, int size)
 /*************************************************************/
 
 static char *log_levels_vector[KATCP_MAX_LEVELS] = {
-  "trace", 
-  "debug", 
-  "info", 
-  "warn", 
-  "error", 
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
   "fatal",
   "off"
+};
+
+static char *log_levels_upper_vector[KATCP_MAX_LEVELS] = {
+  "TRACE",
+  "DEBUG",
+  "INFO",
+  "WARN",
+  "ERROR",
+  "FATAL",
+  "OFF"
 };
 
 int log_to_code_katcl(char *name)
@@ -51,6 +61,12 @@ int log_to_code_katcl(char *name)
 
   for(code = 0; code < KATCP_MAX_LEVELS; code++){
     if(!strncmp(name, log_levels_vector[code], 4)){
+      return code;
+    }
+  }
+
+  for(code = 0; code < KATCP_MAX_LEVELS; code++){
+    if(!strncmp(name, log_levels_upper_vector[code], 4)){
       return code;
     }
   }

@@ -31,14 +31,14 @@ struct katcp_cmd_map;
 struct katcp_vrbl;
 struct katcp_vrbl_payload;
 
-#define KATCP_CODEBASE_NAME     "Ckatcp" 
+#define KATCP_CODEBASE_NAME     "Ckatcp"
 
 #define KATCP_LIBRARY_LABEL     "katcp-library"
 #define KATCP_PROTOCOL_LABEL    "katcp-protocol"
 
-#define KATCP_REQUEST '?' 
-#define KATCP_REPLY   '!' 
-#define KATCP_INFORM  '#' 
+#define KATCP_REQUEST '?'
+#define KATCP_REPLY   '!'
+#define KATCP_INFORM  '#'
 
 #define KATCP_OK      "ok"
 #define KATCP_FAIL    "fail"
@@ -54,6 +54,13 @@ struct katcp_vrbl_payload;
 #define KATCP_RESULT_INVALID (-2)
 #define KATCP_RESULT_PARTIAL (-3)
 
+#define KATCP_SCOPE_INVALID    (-1)
+/* dpx-misc has a lookuptable based on this order */
+#define KATCP_SCOPE_LOCAL        0
+#define KATCP_SCOPE_GROUP        1
+#define KATCP_SCOPE_ALL          2
+#define KATCP_MAX_SCOPE          3
+
 #define KATCP_LEVEL_TRACE    0
 #define KATCP_LEVEL_DEBUG    1
 #define KATCP_LEVEL_INFO     2
@@ -62,11 +69,18 @@ struct katcp_vrbl_payload;
 #define KATCP_LEVEL_FATAL    5
 #define KATCP_LEVEL_OFF      6
 #define KATCP_MAX_LEVELS     7
-
 #define KATCP_MASK_LEVELS  0xff
-/*      KATCL_LEVEL_ALL   0x000 */
-#define KATCP_LEVEL_LOCAL 0x100
-#define KATCP_LEVEL_GROUP 0x200
+
+#define KATCP_SHIFT_LEVEL    8
+
+#define scope_to_level_katcp(s)  (((KATCP_MAX_SCOPE - 1) - (s)) << KATCP_SHIFT_LEVEL)
+#define level_to_scope_katcp(l)  ((KATCP_MAX_SCOPE - 1) - ((l) >> KATCP_SHIFT_LEVEL))
+
+/******************************************/
+
+#define KATCP_LEVEL_ALL   scope_to_level_katcp(KATCP_SCOPE_ALL)
+#define KATCP_LEVEL_GROUP scope_to_level_katcp(KATCP_SCOPE_GROUP)
+#define KATCP_LEVEL_LOCAL scope_to_level_katcp(KATCP_SCOPE_LOCAL)
 
 #define KATCP_FLAG_FIRST  0x01
 #define KATCP_FLAG_LAST   0x02
@@ -82,6 +96,10 @@ struct katcp_vrbl_payload;
 #define KATCP_FLAG_BUFFER 0x50
 #ifdef KATCP_USE_FLOATS
 #define KATCP_FLAG_DOUBLE 0x60
+#endif
+#ifdef KATCP_ENABLE_LLINT
+#define KATCP_FLAG_ULLONG 0x70
+#define KATCP_FLAG_SLLONG 0x80
 #endif
 
 #define KATCP_TYPE_FLAGS  0xf0
@@ -102,7 +120,7 @@ struct katcp_vrbl_payload;
 #define KATCP_SEARCH_REQUEST  "?search"
 
 #define KATCP_LOG_INFORM               "#log"
-#if KATCP_PROTOCOL_MAJOR_VERSION >= 5   
+#if KATCP_PROTOCOL_MAJOR_VERSION >= 5
 #define KATCP_DEVICE_CHANGED_INFORM    "#device-changed"
 #else
 #define KATCP_DEVICE_CHANGED_INFORM    "#interface-changed"
@@ -141,7 +159,7 @@ struct katcp_vrbl_payload;
 /* create a dispatch handler */
 struct katcp_dispatch *startup_katcp(void);
 /* create a dispatch handler on file descriptor */
-struct katcp_dispatch *setup_katcp(int fd); 
+struct katcp_dispatch *setup_katcp(int fd);
 
 int name_katcp(struct katcp_dispatch *d, char *fmt, ...);
 
@@ -183,7 +201,7 @@ int register_flag_mode_katcp(struct katcp_dispatch *d, char *match, char *help, 
 int deregister_command_katcp(struct katcp_dispatch *d, char *match);
 int update_command_katcp(struct katcp_dispatch *d, char *match, int flags);
 
-/* invoke function run as subprocess, invoke function call in parent on its exit */ 
+/* invoke function run as subprocess, invoke function call in parent on its exit */
 pid_t spawn_child_katcp(struct katcp_dispatch *d, char *name, int (*run)(void *data), void *data, void (*call)(struct katcp_dispatch *d, int status));
 
 /* change the callback in mid-flight */
@@ -253,6 +271,12 @@ int append_string_katcp(struct katcp_dispatch *d, int flags, char *buffer);
 int append_unsigned_long_katcp(struct katcp_dispatch *d, int flags, unsigned long v);
 int append_signed_long_katcp(struct katcp_dispatch *d, int flags, unsigned long v);
 int append_hex_long_katcp(struct katcp_dispatch *d, int flags, unsigned long v);
+
+#ifdef KATCP_ENABLE_LLINT
+int append_unsigned_llong_katcp(struct katcp_dispatch *d, int flags, unsigned long long v);
+int append_signed_llong_katcp(struct katcp_dispatch *d, int flags, unsigned long long v);
+#endif
+
 int append_buffer_katcp(struct katcp_dispatch *d, int flags, void *buffer, int len);
 int append_payload_vrbl_katcp(struct katcp_dispatch *d, int flags, struct katcp_vrbl *vx, struct katcp_vrbl_payload *py);
 int append_vargs_katcp(struct katcp_dispatch *d, int flags, char *fmt, va_list args);
@@ -284,7 +308,7 @@ int name_log_level_katcp(struct katcp_dispatch *d, char *name);
 int log_level_katcp(struct katcp_dispatch *d, unsigned int level);
 int log_message_katcp(struct katcp_dispatch *d, unsigned int priority, char *name, char *fmt, ...);
 int log_relay_katcp(struct katcp_dispatch *d, struct katcl_parse *p);
-int log_parse_katcp(struct katcp_dispatch *d, int level, struct katcl_parse *px);
+int log_parse_katcp(struct katcp_dispatch *d, int level, int local, struct katcl_parse *px);
 
 int extra_response_katcp(struct katcp_dispatch *d, int code, char *fmt, ...);
 int basic_inform_katcp(struct katcp_dispatch *d, char *name, char *arg);
@@ -310,7 +334,7 @@ int exiting_katcp(struct katcp_dispatch *d); /* run cleanup functions once */
 #define KATCP_STATUS_WARN      2
 #define KATCP_STATUS_ERROR     3
 #define KATCP_STATUS_FAILURE   4
-#if KATCP_PROTOCOL_MAJOR_VERSION >= 5   
+#if KATCP_PROTOCOL_MAJOR_VERSION >= 5
 #define   KATCP_STATUS_UNREACHABLE 5
 #define   KATCP_STATUS_INACTIVE    6
 #define   KATCP_STATA_COUNT        7
@@ -333,6 +357,7 @@ struct katcp_sensor *find_sensor_katcp(struct katcp_dispatch *d, char *name);
 
 int set_status_sensor_katcp(struct katcp_sensor *sn, int status);
 int set_status_group_sensor_katcp(struct katcp_dispatch *d, char *prefix, int status);
+int set_format_sensor_katcp(struct katcp_dispatch *d, struct katcp_sensor *sn, char *format);
 
 void *get_local_acquire_katcp(struct katcp_dispatch *d, struct katcp_acquire *a);
 void generic_release_local_acquire_katcp(struct katcp_dispatch *d, struct katcp_acquire *a);
@@ -346,6 +371,7 @@ int propagate_acquire_katcp(struct katcp_dispatch *d, struct katcp_acquire *a);
 
 /****************************************************************************/
 
+struct katcp_acquire *setup_integer_acquire_katcp(struct katcp_dispatch *d, int (*get)(struct katcp_dispatch *d, struct katcp_acquire *a), void *local, void (*release)(struct katcp_dispatch *d, struct katcp_acquire *a));
 int declare_integer_sensor_katcp(struct katcp_dispatch *d, int mode, char *name, char *description, char *units, int (*get)(struct katcp_dispatch *d, struct katcp_acquire *a), void *local, void (*release)(struct katcp_dispatch *d, struct katcp_acquire *a), int nom_min, int nom_max, int warn_min, int warn_max, int (*flush)(struct katcp_dispatch *d, struct katcp_sensor *sn));
 int register_integer_sensor_katcp(struct katcp_dispatch *d, int mode, char *name, char *description, char *units, int (*get)(struct katcp_dispatch *d, struct katcp_acquire *a), void *local, void (*release)(struct katcp_dispatch *d, struct katcp_acquire *a), int min, int max, int (*flush)(struct katcp_dispatch *d, struct katcp_sensor *sn));
 
@@ -354,6 +380,7 @@ int register_multi_integer_sensor_katcp(struct katcp_dispatch *d, int mode, char
 
 struct katcp_acquire *setup_integer_acquire_katcp(struct katcp_dispatch *d, int (*get)(struct katcp_dispatch *d, struct katcp_acquire *), void *local, void (*release)(struct katcp_dispatch *d, struct katcp_acquire *a));
 int set_integer_acquire_katcp(struct katcp_dispatch *d, struct katcp_acquire *a, int value);
+struct katcp_integer_acquire *acquired_integer_value_katcp(struct katcp_dispatch *d, struct katcp_sensor *sn);
 
 /****************************************************************************/
 
@@ -369,6 +396,9 @@ int set_boolean_acquire_katcp(struct katcp_dispatch *d, struct katcp_acquire *a,
 
 /****************************************************************************/
 
+#ifdef KATCP_ENABLE_LLINT
+#endif
+
 #ifdef KATCP_USE_FLOATS
 
 int declare_double_sensor_katcp(struct katcp_dispatch *d, int mode, char *name, char *description, char *units, double (*get)(struct katcp_dispatch *d, struct katcp_acquire *a), void *local, void (*release)(struct katcp_dispatch *d, struct katcp_acquire *a), double nom_min, double nom_max, double warn_min, double warn_max, int (*flush)(struct katcp_dispatch *d, struct katcp_sensor *sn));
@@ -379,6 +409,7 @@ int register_multi_double_sensor_katcp(struct katcp_dispatch *d, int mode, char 
 
 struct katcp_acquire *setup_double_acquire_katcp(struct katcp_dispatch *d, double (*get)(struct katcp_dispatch *d, struct katcp_acquire *a), void *local, void (*release)(struct katcp_dispatch *d, struct katcp_acquire *a));
 int set_double_acquire_katcp(struct katcp_dispatch *d, struct katcp_acquire *a, double value);
+struct katcp_double_acquire *acquired_double_value_katcp(struct katcp_dispatch *d, struct katcp_sensor *sn);
 
 #endif
 
@@ -388,9 +419,14 @@ int register_discrete_sensor_katcp(struct katcp_dispatch *d, int mode, char *nam
 
 int expand_sensor_discrete_katcp(struct katcp_dispatch *d, struct katcp_sensor *sn, unsigned int position, char *name);
 
+
+int declare_multi_discrete_sensor_katcp(struct katcp_dispatch *d, int mode, char *name, char *description, char *units, char **vector, unsigned int size, struct katcp_acquire *a, int (*extract)(struct katcp_dispatch *d, struct katcp_sensor *sn), int (*flush)(struct katcp_dispatch *d, struct katcp_sensor *sn));
+int register_multi_discrete_sensor_katcp(struct katcp_dispatch *d, int mode, char *name, char *description, char *units, char **vector, unsigned int size, struct katcp_acquire *a, int (*extract)(struct katcp_dispatch *d, struct katcp_sensor *sn), int (*flush)(struct katcp_dispatch *d, struct katcp_sensor *sn));
+
 struct katcp_acquire *setup_discrete_acquire_katcp(struct katcp_dispatch *d, int (*get)(struct katcp_dispatch *d, struct katcp_acquire *a), void *local, void (*release)(struct katcp_dispatch *d, struct katcp_acquire *a));
 
 int set_discrete_acquire_katcp(struct katcp_dispatch *d, struct katcp_acquire *a, unsigned value);
+struct katcp_discrete_acquire *acquired_discrete_value_katcp(struct katcp_dispatch *d, struct katcp_sensor *sn);
 
 /***************************************************************************/
 
@@ -442,11 +478,28 @@ int hook_commands_katcp(struct katcp_dispatch *d, unsigned int type, int (*hook)
 /* timing callbacks */
 
 int discharge_timer_katcp(struct katcp_dispatch *d, void *data);
+int discharge_named_timer_katcp(struct katcp_dispatch *d, char *name);
+
+void *find_data_by_name_heap_timer_katcp(struct katcp_dispatch *d, char *name);
+
 int unwarp_timers_katcp(struct katcp_dispatch *d);
 int register_every_ms_katcp(struct katcp_dispatch *d, unsigned int milli, int (*call)(struct katcp_dispatch *d, void *data), void *data);
 int register_every_tv_katcp(struct katcp_dispatch *d, struct timeval *tv, int (*call)(struct katcp_dispatch *d, void *data), void *data);
 int register_at_tv_katcp(struct katcp_dispatch *d, struct timeval *tv, int (*call)(struct katcp_dispatch *d, void *data), void *data);
 int register_in_tv_katcp(struct katcp_dispatch *d, struct timeval *tv, int (*call)(struct katcp_dispatch *d, void *data), void *data);
+
+int register_heap_timer_at_tv_katcp(struct katcp_dispatch *d, struct timeval *tv, int (*call)(struct katcp_dispatch *d, void *data), void *data, char *name);
+int register_heap_timer_in_tv_katcp(struct katcp_dispatch *d, struct timeval *tv, int (*call)(struct katcp_dispatch *d, void *data), void *data, char *name);
+int register_heap_timer_every_tv_katcp(struct katcp_dispatch *d, struct timeval *tv, int (*call)(struct katcp_dispatch *d, void *data), void *data, char *name);
+int register_heap_timer_every_ms_katcp(struct katcp_dispatch *d, unsigned int milli, int (*call)(struct katcp_dispatch *d, void *data), void *data, char *name);
+
+int adjust_interval_heap_timer_katcp(struct katcp_dispatch *d, struct timeval *adjust, char *name);
+int adjust_interval_anonymous_heap_timer_katcp(struct katcp_dispatch *d, struct timeval *adjust, void *data);
+int rename_heap_timer_katcp(struct katcp_dispatch *d, char *old_name, char *new_name);
+
+struct katcp_time *find_by_data_ref_heap_timer_katcp(struct katcp_dispatch *d, void *data, int *index);
+int disarm_by_ref_heap_timer(struct katcp_dispatch *d, void *data);
+int disarm_by_name_heap_timer(struct katcp_dispatch *d, char *name);
 
 int wake_notice_at_tv_katcp(struct katcp_dispatch *d, struct katcp_notice *n, struct timeval *tv);
 int wake_notice_in_tv_katcp(struct katcp_dispatch *d, struct katcp_notice *n, struct timeval *tv);
@@ -620,7 +673,7 @@ void print_type_katcp(struct katcp_dispatch *d, struct katcp_type *t, int flags)
 
 #ifdef DEBUG
 void sane_shared_katcp(struct katcp_dispatch *d);
-#else 
+#else
 #define sane_shared_katcp(d)
 #endif
 
@@ -727,6 +780,11 @@ int append_string_flat_katcp(struct katcp_dispatch *d, int flags, char *buffer);
 int append_unsigned_long_flat_katcp(struct katcp_dispatch *d, int flags, unsigned long v);
 int append_signed_long_flat_katcp(struct katcp_dispatch *d, int flags, unsigned long v);
 int append_hex_long_flat_katcp(struct katcp_dispatch *d, int flags, unsigned long v);
+
+#ifdef KATCP_ENABLE_LLINT
+int append_unsigned_llong_flat_katcp(struct katcp_dispatch *d, int flags, unsigned long long v);
+int append_signed_llong_flat_katcp(struct katcp_dispatch *d, int flags, unsigned long long v);
+#endif
 #ifdef KATCP_USE_FLOATS
 int append_double_flat_katcp(struct katcp_dispatch *d, int flags, double v);
 #endif
@@ -754,6 +812,7 @@ int log_override_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int help_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int client_list_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int watchdog_group_cmd_katcp(struct katcp_dispatch *d, int argc);
+int whoami_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 
 int listen_duplex_cmd_katcp(struct katcp_dispatch *d, int argc);
 int list_duplex_cmd_katcp(struct katcp_dispatch *d, int argc);
@@ -768,12 +827,15 @@ int client_halt_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int client_config_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int client_switch_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 
+int tcp_config_group_cmd_katcp(struct katcp_dispatch *d, int argc);
+
 int group_create_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int group_list_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int group_halt_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int group_config_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 
 int listener_create_group_cmd_katcp(struct katcp_dispatch *d, int argc);
+int listener_config_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int listener_halt_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int listener_list_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 
@@ -791,9 +853,11 @@ int alias_cmd_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 
 int sensor_list_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int sensor_sampling_group_cmd_katcp(struct katcp_dispatch *d, int argc);
+int bulk_sensor_sampling_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int sensor_value_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 
 int var_list_group_cmd_katcp(struct katcp_dispatch *d, int argc);
+int var_show_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int var_declare_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int var_set_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int var_delete_group_cmd_katcp(struct katcp_dispatch *d, int argc);
@@ -803,6 +867,8 @@ int version_list_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int scope_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 int broadcast_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 
+int timer_rename_group_cmd_katcp(struct katcp_dispatch *d, int argc);
+int timer_list_group_cmd_katcp(struct katcp_dispatch *d, int argc);
 
 /* duplex related inform handlers */
 
@@ -816,6 +882,17 @@ int version_group_info_katcp(struct katcp_dispatch *d, int argc);
 int send_message_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *from, struct katcp_endpoint *to, struct katcl_parse *px, int acknowledged);
 struct katcl_parse *parse_of_endpoint_katcp(struct katcp_dispatch *d, struct katcp_message *msg);
 struct katcp_endpoint *source_endpoint_katcp(struct katcp_dispatch *d, struct katcp_message *msg);
+
+/* duplex server api*/
+
+/* configure the duplex server */
+int config_server_flat_katcp(struct katcp_dispatch *dl, char *configfile, char *exe, char *host_port);
+
+/* run the duplex server */
+int run_server_flat_katcp(struct katcp_dispatch *dl);
+
+/* configure and run duplex server */
+int run_config_server_flat_katcp(struct katcp_dispatch *dl, char *configfile, char *exe, char *host, int port);
 
 #ifdef __cplusplus
 }

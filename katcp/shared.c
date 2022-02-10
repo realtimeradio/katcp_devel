@@ -221,6 +221,10 @@ int startup_shared_katcp(struct katcp_dispatch *d)
   s->s_count = 0;
   s->s_used = 0;
 
+  s->s_lcount = 0;
+  s->s_epcount = 0;
+  s->s_up_count = 0;
+
   s->s_lfd = (-1);
 
 #if 0
@@ -234,6 +238,8 @@ int startup_shared_katcp(struct katcp_dispatch *d)
   s->s_queue = NULL;
   s->s_length = 0;
 
+  s->s_tmr_heap = NULL;
+
   s->s_extras = NULL;
   s->s_total = 0;
 
@@ -241,6 +247,7 @@ int startup_shared_katcp(struct katcp_dispatch *d)
   s->s_pending = 0;
 
   s->s_busy = 0;
+  s->s_busy_run = 0;
 
   s->s_groups = NULL;
   s->s_fallback = NULL;
@@ -490,12 +497,19 @@ void shutdown_shared_katcp(struct katcp_dispatch *d)
   }
 #endif
 
+
+#ifdef KATCP_HEAP_TIMERS
+  /* destroy heap timer and associated remaining timers */
+  empty_heap_timers_katcp(d);
+#else
 #ifdef DEBUG
   if(s->s_length > 0){
     fprintf(stderr, "shutdown: probably bad form to rely on shutdown to clear schedule\n");
   }
 #endif
   empty_timers_katcp(d);
+#endif
+
 
   /* restore signal handlers if we messed with them */
   undo_signals_shared_katcp(s);

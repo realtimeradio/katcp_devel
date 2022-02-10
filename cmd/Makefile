@@ -26,4 +26,5 @@ clean:
 	$(RM) $(OBJ) core $(EXE)
 
 install: all
+	$(INSTALL) -d $(PREFIX)
 	$(INSTALL) $(EXE) $(PREFIX)/bin

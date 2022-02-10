@@ -17,12 +17,25 @@
 #define TBS_LOGFILE        "/var/log/tcpborphserver3.log"
 #endif
 
-#ifdef __PPC__
+#ifdef __PPC__ /* check for PPC roach */
+#define TBS_DO_FLIP        0
 #define TBS_FPGA_CONFIG    "/dev/roach/config"
 #define TBS_FPGA_MEM       "/dev/roach/mem"
+#elif __ARM_ARCH_7A__ /* check for arm 7 (red pitaya board zync soc)  */
+#define TBS_DO_FLIP        1
+#define TBS_FPGA_CONFIG    "/dev/xdevcfg"
+#define TBS_FPGA_MEM       "/dev/mem"
+#elif __ARM_ARCH_8A /* check for arm 8 (zynq ultrascal mpsoc)*/
+#define TBS_DO_FLIP        0
+#define TBS_FPGA_CONFIG    "/lib/firmware/tcpborphserver.bin"
+#define TBS_FPGA_MEM       "/dev/mem"
+#define FPGA_MANAGER_FLAG  "/sys/class/fpga_manager/fpga0/flags"
+#define FPGA_MANAGER_FW    "/sys/class/fpga_manager/fpga0/firmware"
+#define FPGA_MANAGER_STATE "/sys/class/fpga_manager/fpga0/state"
 #else
-#define TBS_FPGA_CONFIG    "dev-roach-config"
-#define TBS_FPGA_MEM       "dev-roach-mem"
+#define TBS_DO_FLIP        0
+#define TBS_FPGA_CONFIG    "/lib/firmware/tcpborphserver.bin"
+#define TBS_FPGA_MEM       "/dev/mem"
 #endif
 
 #define TBS_KCPFPG_PATH    "/bin/kcpfpg"
@@ -50,6 +63,9 @@ int status_fpga_tbs(struct katcp_dispatch *d, int status);
 int map_raw_tbs(struct katcp_dispatch *d);
 unsigned int infer_fpga_range(struct katcp_dispatch *d);
 
+#ifdef IS_RFSOC
+#include "rfsoc.h"
+#endif
 
 #define GETAP_IP_BUFFER         20
 #define GETAP_MAC_BUFFER        18
@@ -65,6 +81,10 @@ unsigned int infer_fpga_range(struct katcp_dispatch *d);
 #define GETAP_PERIOD_STOP        3
 
 #define GETAP_VECTOR_PERIOD      4
+
+#define GETAP_DHCP_BUFFER_SIZE 416
+
+typedef enum {INIT, RANDOMIZE, SELECT, WAIT, REQUEST, BOUND, RENEW, REBIND} DHCP_STATE_TYPE;
 
 struct getap_state{
   uint32_t s_magic;
@@ -121,10 +141,14 @@ struct getap_state{
   unsigned long s_tx_arp;
   unsigned long s_tx_user;
   unsigned long s_tx_error;
+  unsigned long s_tx_dhcp;
 
   unsigned long s_rx_arp;
   unsigned long s_rx_user;
   unsigned long s_rx_error;
+  unsigned long s_rx_dhcp_valid;
+  unsigned long s_rx_dhcp_unknown;
+  unsigned long s_rx_dhcp_invalid;
 
   unsigned char s_rxb[GETAP_MAX_FRAME];
   unsigned char s_txb[GETAP_MAX_FRAME];
@@ -145,12 +169,45 @@ struct getap_state{
   uint8_t s_arp_table[GETAP_ARP_CACHE][GETAP_MAC_SIZE];
   uint32_t s_arp_fresh[GETAP_ARP_CACHE];
 
+  unsigned char s_dhcp_tx_buffer[GETAP_DHCP_BUFFER_SIZE];
+  unsigned char s_dhcp_rx_buffer[GETAP_MAX_FRAME];
+
+  uint8_t s_dhcp_next_hop_mac_binary[GETAP_MAC_SIZE];
+
+  uint32_t s_dhcp_xid_binary;
+  uint8_t s_dhcp_xid[4];
+
+  time_t s_dhcp_sec_start;
+
+  DHCP_STATE_TYPE s_dhcp_state;
+  int s_dhcp_sm_enable;
+  int s_dhcp_buffer_flag;
+  int s_dhcp_sm_count;
+  int s_dhcp_sm_retries;
+
+  int s_dhcp_wait;
+
+  unsigned char s_dhcp_yip_addr[4];
+  unsigned char s_dhcp_srv_addr[4];
+
+  unsigned char s_dhcp_submask[4];
+  unsigned char s_dhcp_route[4];
+
+  uint32_t s_dhcp_lease_t;
+  uint32_t s_dhcp_t1;
+  uint32_t s_dhcp_t2;
+  int s_dhcp_timer;
+
+  int s_dhcp_errors;
+  int s_dhcp_obtained;
+  struct katcp_notice *s_dhcp_notice;
+
 };
 
 #define TBS_FPGA_DOWN        0
 #define TBS_FPGA_PROGRAMMED  1
 #define TBS_FPGA_MAPPED      2
-#define TBS_FPGA_READY       3    
+#define TBS_FPGA_READY       3
 #define TBS_STATES_FPGA      4
 
 struct tbs_raw
@@ -158,13 +215,16 @@ struct tbs_raw
   struct avl_tree *r_registers;
   struct avl_tree *r_hwmon; /* only used if INTERNAL_HWMON set */
   int r_fpga;
+  int r_clobber;
 
   void *r_map;
   unsigned int r_map_size;
+  unsigned int r_map_offset;
 
   char *r_image;
   char *r_bof_dir;
   unsigned int r_top_register;
+  unsigned int r_bot_register;
 
   int r_argc;
   char **r_argv;
@@ -175,6 +235,10 @@ struct tbs_raw
   unsigned int r_instances;
 
   struct avl_tree *r_meta;
+
+  char *r_lkey;
+
+  struct tbs_rfdc *r_rfdc;
 };
 
 struct meta_entry
@@ -245,6 +309,18 @@ struct tbs_port_data {
 #endif
 };
 
+struct read_bram_info
+{
+  char *name;    /* name of BRAM to read*/
+  char *ip_addr; /* IP address to send the data to*/
+};
+
+int capture_start_cmd(struct katcp_dispatch *d, int argc);
+void destroy_read_bram_info(struct katcp_dispatch *d, struct read_bram_info *bram);
+int capture_stop_cmd(struct katcp_dispatch *d, int argc);
+struct read_bram_info *create_read_bram_info(struct katcp_dispatch *d, char *bram_name, char *ip);
+int run_capture_timer(struct katcp_dispatch *d, void *data);
+ 
 int upload_generic_resume_tbs(struct katcp_dispatch *d, struct katcp_notice *n, void *data);
 int detect_file_tbs(struct katcp_dispatch *d, char *name, int fd);
 
@@ -254,6 +330,7 @@ int upload_program_cmd(struct katcp_dispatch *d, int argc);
 int upload_filesystem_cmd(struct katcp_dispatch *d, int argc);
 int upload_bin_cmd(struct katcp_dispatch *d, int argc);
 
+int rfdc_upload_rfclk_cmd(struct katcp_dispatch *d, int argc);
 
 #if 0
 int run_fpg_generic(struct katcp_dispatch *d, struct katcp_notice *n, void *data);

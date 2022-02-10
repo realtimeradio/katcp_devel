@@ -336,7 +336,7 @@ int recv_ntp(struct katcp_dispatch *d, struct ntp_state *nt)
   }
 
   if(nm->n_sequence != nt->n_sequence){
-    log_message_katcp(d, KATCP_LEVEL_WARN, TMON_MODULE_NAME, "ntp received sequence number %d not %d", nm->n_sequence, nt->n_sequence);
+    log_message_katcp(d, KATCP_LEVEL_INFO, TMON_MODULE_NAME, "ntp received sequence number %d not %d", nm->n_sequence, nt->n_sequence);
     return -1;
   }
 

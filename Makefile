@@ -10,8 +10,11 @@ endif
 
 MISC = scripts misc 
 
+SNAPSHOT=katcp-$(GITVER)
+
 SELECTED = kcs cmd tmon log msg par con fpg run mpx 
 EVERYTHING = $(LIBRARY) $(APPS)
+TOPLEVEL = COPYING INSTALL Makefile Makefile.inc README TODO
 
 ###############################################################################
 
@@ -23,6 +26,12 @@ $(patsubst %,%-all,$(APPS)): $(patsubst %,%-all,$(LIBRARY))
 
 %-all %-clean %-install:
 	$(MAKE) -C $(shell echo $@ | cut -f1 -d- ) KATCP=../$(KATCP) $(shell echo $@ | cut -f2 -d-)
+
+dist: clean
+	$(RM) $(SNAPSHOT) $(SNAPSHOT).tar.gz
+	$(LN) . $(SNAPSHOT)
+	$(TAR) czhlvf $(SNAPSHOT).tar.gz $(foreach f,$(TOPLEVEL) $(EVERYTHING),$(SNAPSHOT)/$(f))
+	$(RM) $(SNAPSHOT)
 
 ###############################################################################
 # old style build, can not be run in parallel 

@@ -1,0 +1,49 @@
+#!/bin/bash
+
+### usage example : $> kcsdplxd -s kcsdplx.script [-f] -l /dev/null ###
+
+echo "?var-declare test* string"
+
+##script shall wait for each response
+##this prevents this subprocess exiting before each command has been processed
+
+#read stdin and check
+while read -r LINE; do
+  set -u $LINE
+  if test $1 = '!var-declare'; then
+    break
+  fi
+done
+
+echo "?var-declare katcp-duplex-server* string,version"
+
+while read -r LINE; do
+  set -u $LINE
+  if test $1 = '!var-declare'; then
+    break
+  fi
+done
+
+echo "?var-set katcp-duplex-server 1.0.0-beta"
+
+while read -r LINE; do
+  set -u $LINE
+  if test $1 = '!var-set'; then
+    break
+  fi
+done
+
+echo "?listener-create primary 7149"
+
+while read -r LINE; do
+  set -u $LINE
+  if test $1 = '!listener-create'; then
+    break
+  fi
+done
+
+echo "?client-config named-log"
+
+echo "#sensor-list temp description unit integer"
+
+#sleep 100

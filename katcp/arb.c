@@ -113,7 +113,7 @@ static void destroy_arb_katcp(struct katcp_dispatch *d, struct katcp_arb *a)
 {
   if(a == NULL){
     return;
-  } 
+  }
 
 #ifdef KATCP_CONSISTENCY_CHECKS
   if(a->a_reap != ARB_REAP_GONE){
@@ -149,7 +149,7 @@ int unlink_arb_katcp(struct katcp_dispatch *d, struct katcp_arb *a)
 {
   switch(a->a_reap){
     case ARB_REAP_LIVE :
-      
+
       if(a->a_fd >= 0){ /* release fd sooner */
         close(a->a_fd);
         a->a_fd = (-1);
@@ -234,11 +234,11 @@ int foreach_arb_katcp(struct katcp_dispatch *d, unsigned int type, int (*call)(s
   }
 
   count = 0;
-  
+
   for(i = 0; i < s->s_total; i++){
     a = s->s_extras[i];
 
-    if(a && (a->a_reap == ARB_REAP_LIVE)){ 
+    if(a && (a->a_reap == ARB_REAP_LIVE)){
       if((type == 0) || (type == a->a_type)){
         if((*(call))(d, a, data) == 0){
           count++;
@@ -260,7 +260,7 @@ struct katcp_arb *find_type_arb_katcp(struct katcp_dispatch *d, char *name, unsi
   if(s == NULL){
     return NULL;
   }
-  
+
   for(i = 0; i < s->s_total; i++){
     a = s->s_extras[i];
 
@@ -292,7 +292,7 @@ void load_arb_katcp(struct katcp_dispatch *d)
 
   i = 0;
   while(i < s->s_total){
-  
+
     a = s->s_extras[i];
 
 #ifdef DEBUG
@@ -300,28 +300,28 @@ void load_arb_katcp(struct katcp_dispatch *d)
 #endif
 
     switch(a->a_reap){
-      case ARB_REAP_LIVE : 
+      case ARB_REAP_LIVE :
         if(a->a_fd >= 0){
           if(a->a_mode & KATCP_ARB_READ){
             FD_SET(a->a_fd, &(s->s_read));
-          } 
+          }
           if(a->a_mode & KATCP_ARB_WRITE){
             FD_SET(a->a_fd, &(s->s_write));
           }
 
           if(a->a_mode & (KATCP_ARB_WRITE | KATCP_ARB_READ)){
-            if(a->a_fd > s->s_max){ 
+            if(a->a_fd > s->s_max){
               s->s_max = a->a_fd;
             }
           }
         }
         i++;
         break;
-      case ARB_REAP_FADE : 
+      case ARB_REAP_FADE :
         mark_busy_katcp(d);
         i++;
         break;
-      case ARB_REAP_GONE : 
+      case ARB_REAP_GONE :
         s->s_total--;
         if(s->s_total > i){
           s->s_extras[i] = s->s_extras[s->s_total];
@@ -346,7 +346,7 @@ int run_arb_katcp(struct katcp_dispatch *d)
   struct katcp_shared *s;
   struct katcp_arb *a;
   int fd, result, ran;
-  
+
 
   s = d->d_shared;
   if(s == NULL){
@@ -354,12 +354,12 @@ int run_arb_katcp(struct katcp_dispatch *d)
   }
 
   ran = 0;
-  
+
   for(i = 0; i < s->s_total; i++){
     a = s->s_extras[i];
 
     switch(a->a_reap){
-      case ARB_REAP_LIVE : 
+      case ARB_REAP_LIVE :
         fd = a->a_fd;
 
         if(fd >= 0){

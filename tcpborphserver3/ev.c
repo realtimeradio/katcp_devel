@@ -32,13 +32,13 @@ int open_evdev_tbs(struct katcp_dispatch *d, char *name)
 #endif
     if(fd < 0){
       switch(errno){
-        case ENODEV : 
+        case ENODEV :
           log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "no device driver backing %s, giving up", buffer);
           return -1;
-        case ENOENT : 
+        case ENOENT :
           log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, (i == 0) ? "unable to locate device file %s, try creating it" : "no further device file at %s to match %s, giving up", buffer, name);
           return -1;
-        default : 
+        default :
           log_message_katcp(d, KATCP_LEVEL_WARN, NULL, "skipping device %s, error given: %s", buffer, strerror(errno));
           return -1;
       }
@@ -61,7 +61,7 @@ int open_evdev_tbs(struct katcp_dispatch *d, char *name)
     log_message_katcp(d, KATCP_LEVEL_DEBUG, NULL, "found matching event%d for name %s", i, name);
     return fd;
   }
-#undef BUFFER 
+#undef BUFFER
 }
 
 int run_chassis_tbs(struct katcp_dispatch *d, struct katcp_arb *a, unsigned int mode)
@@ -77,7 +77,7 @@ int run_chassis_tbs(struct katcp_dispatch *d, struct katcp_arb *a, unsigned int 
       log_message_katcp(d, KATCP_LEVEL_TRACE, NULL, "input event type=%d, code=%d, value=%d", event.type, event.code, event.value);
       if(event.type == EV_KEY && (event.value > 0)){
         switch(event.code){
-          case KEY_POWER : 
+          case KEY_POWER :
           case KEY_SYSRQ :
             log_message_katcp(d, KATCP_LEVEL_WARN, NULL, "power button pressed, shutting down");
             terminate_katcp(d, KATCP_EXIT_HALT);
@@ -258,8 +258,8 @@ int led_chassis_cmd(struct katcp_dispatch *d, int argc)
   value = 0;
   parm = arg_string_katcp(d, 2);
   if(parm){
-    if(strcmp(parm, "off") && 
-       strcmp(parm, "false") && 
+    if(strcmp(parm, "off") &&
+       strcmp(parm, "false") &&
        strcmp(parm, "0")
       ){
       value = 1;

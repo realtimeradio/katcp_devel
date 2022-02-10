@@ -40,6 +40,8 @@ Project specific code, requring particular gateware and instruments:
 
   kcs         - a control server using katcp 
                 (incomplete)
+  kcsdplx     - duplexing katcp control server
+                (implements the dpx components of katcp lib)
   scripts     - supporting logic to interface kcs to corr 
                 (used by kcs, temporary hack)
   tmon        - monitor a local ntp server via katcp 

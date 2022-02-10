@@ -13,16 +13,13 @@ extern "C" {
 struct katcl_larg;
 struct katcl_line;
 struct katcl_parse;
-
-struct katcl_byte_bit{
-  unsigned long b_byte;
-  unsigned char b_bit;
-  unsigned char b_align;
-};
+struct katcl_byte_bit;
 
 struct katcl_line *create_katcl(int fd);
 void destroy_katcl(struct katcl_line *l, int end);
 int error_katcl(struct katcl_line *l);
+
+unsigned int allocated_parses_katcl();
 
 int load_katcl(struct katcl_line *l, char *buffer, unsigned int size);
 int read_katcl(struct katcl_line *l);
@@ -52,6 +49,10 @@ int append_string_katcl(struct katcl_line *l, int flags, char *buffer);
 int append_unsigned_long_katcl(struct katcl_line *l, int flags, unsigned long v);
 int append_signed_long_katcl(struct katcl_line *l, int flags, unsigned long v);
 int append_hex_long_katcl(struct katcl_line *l, int flags, unsigned long v);
+#ifdef KATCP_ENABLE_LLINT
+int append_unsigned_llong_katcl(struct katcl_line *l, int flags, unsigned long long v);
+int append_signed_llong_katcl(struct katcl_line *l, int flags, unsigned long long v);
+#endif
 int append_vargs_katcl(struct katcl_line *l, int flags, char *fmt, va_list args);
 int append_args_katcl(struct katcl_line *l, int flags, char *fmt, ...);
 #ifdef KATCP_USE_FLOATS
@@ -73,6 +74,9 @@ int print_katcl(struct katcl_line *l, int full, char *fmt, ...);
 #endif
 
 int relay_katcl(struct katcl_line *lx, struct katcl_line *ly);
+
+unsigned int flushing_bytes_katcl(struct katcl_line *l);
+unsigned int flushing_queue_katcl(struct katcl_line *l);
 
 int flushing_katcl(struct katcl_line *l);
 int write_katcl(struct katcl_line *l);

@@ -1132,7 +1132,10 @@ int search_katcp(struct katcp_dispatch *d, struct katcl_parse *p)
   struct katcp_stack *tags, *ans; 
   struct katcp_type *tagtype;
   char *tag;
-  int i, j, count, *dsize, *di, run, seen;
+  int i, count, *dsize, *di, run, seen;
+#if DEBUG > 1
+  int j;
+#endif
   struct katcp_tobject ***data, *to;
   struct katcp_tag *t;
   struct timeval ts, te, delta;

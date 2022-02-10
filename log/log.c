@@ -37,6 +37,7 @@ void usage(char *app)
   printf("-t              truncate the logfile when opening it\n");
   printf("-k              use tcp keepalives\n");
   printf("-p              persist - reconnect when the connection fails\n");
+  printf("-r              set name with client-rename\n");
   printf("-m name         report internal messages under this module field\n");
   printf("-s server:port  connect to the specified server rather than localhost:7147\n");
   printf("-a attempts     make the given number attempts to connect to the server before giving up\n");
@@ -84,7 +85,7 @@ int main(int argc, char **argv)
 #define BUFFER 64
   char buffer[BUFFER];
   char *level, *app, *server, *output;
-  int run, fd, i, j, c, verbose, attempts, detach, result, truncate, flags, keep, persist;
+  int run, fd, i, j, c, verbose, attempts, detach, result, truncate, flags, keep, persist, rename;
   struct katcl_parse *p;
   struct katcl_line *ls, *lo;
   struct sigaction sa;
@@ -101,6 +102,7 @@ int main(int argc, char **argv)
   truncate = 0;
   keep = 0;
   persist = 0;
+  rename = 0;
 
   server = getenv("KATCP_SERVER");
   if(server == NULL){
@@ -155,6 +157,11 @@ int main(int argc, char **argv)
 
         case 'q' : 
           verbose = 0;
+          j++;
+          break;
+
+        case 'r' :
+          rename = 1;
           j++;
           break;
 
@@ -298,13 +305,29 @@ int main(int argc, char **argv)
     fclose(stderr);
   }
 
-
   if(log_level <= KATCP_LEVEL_INFO){
     time(&now);
     local = localtime(&now);
     strftime(buffer, BUFFER - 1, "%Y-%m-%dT%H:%M:%S", local);
     sync_message_katcl(lo, KATCP_LEVEL_INFO, module, "logger start for %s at %s", server, buffer);
   }
+
+  if(rename){
+    p = create_parse_katcl();
+    if(p){
+
+      add_string_parse_katcl(p, KATCP_FLAG_STRING | KATCP_FLAG_FIRST, "?client-rename");
+      add_string_parse_katcl(p, KATCP_FLAG_STRING | KATCP_FLAG_LAST, output ? output : "stdout");
+
+      append_parse_katcl(lo, p);
+
+      /* dodgy refcount dealings: p is created with refcount = 0, so can only do write at end, otherwise may end up being deallocated */
+
+      append_parse_katcl(ls, p);
+      write_katcl(ls);
+    }
+  }
+
 
   for(run = 1; run > 0;){
 

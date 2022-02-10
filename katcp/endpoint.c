@@ -218,6 +218,8 @@ int send_message_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint 
     return -1;
   }
 
+  mark_busy_katcp(d);
+
   if(is_reply_parse_katcl(px)){
 #ifdef KATCP_CONSISTENCY_CHECKS  
     if(from == NULL){
@@ -264,11 +266,14 @@ struct katcp_message *head_message_endpoint_katcp(struct katcp_dispatch *d, stru
 
 /* setup/destroy routines for endpoints *********************************/
 
-int init_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *ep, int (*wake)(struct katcp_dispatch *d, struct katcp_endpoint *ep, struct katcp_message *msg, void *data), void (*release)(struct katcp_dispatch *d, void *data), void *data);
+int init_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *ep, int (*wake)(struct katcp_dispatch *d, struct katcp_endpoint *ep, struct katcp_message *msg, void *data), void (*release)(struct katcp_dispatch *d, void *data), void *data, int fast);
 
-struct katcp_endpoint *create_endpoint_katcp(struct katcp_dispatch *d, int (*wake)(struct katcp_dispatch *d, struct katcp_endpoint *ep, struct katcp_message *msg, void *data), void (*release)(struct katcp_dispatch *d, void *data), void *data)
+struct katcp_endpoint *create_endpoint_katcp(struct katcp_dispatch *d, int (*wake)(struct katcp_dispatch *d, struct katcp_endpoint *ep, struct katcp_message *msg, void *data), void (*release)(struct katcp_dispatch *d, void *data), void *data, int fast)
 {
   struct katcp_endpoint *ep;
+  struct katcp_shared *s;
+
+  s = d->d_shared;
 
   ep = malloc(sizeof(struct katcp_endpoint));
   if(ep == NULL){
@@ -277,12 +282,14 @@ struct katcp_endpoint *create_endpoint_katcp(struct katcp_dispatch *d, int (*wak
 
   /* TODO */
 
-  if(init_endpoint_katcp(d, ep, wake, release, data) < 0){
+  if(init_endpoint_katcp(d, ep, wake, release, data, fast) < 0){
     free_endpoint_katcp(d, ep);
     return NULL;
   }
 
   ep->e_freeable = 1;
+
+  s->s_epcount++;
 
   return ep;
 }
@@ -305,7 +312,7 @@ static unsigned int compute_precedence_endpoint(void *datum)
   return ENDPOINT_PRECEDENCE_HIGH;
 }
 
-int init_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *ep, int (*wake)(struct katcp_dispatch *d, struct katcp_endpoint *ep, struct katcp_message *msg, void *data), void (*release)(struct katcp_dispatch *d, void *data), void *data)
+int init_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *ep, int (*wake)(struct katcp_dispatch *d, struct katcp_endpoint *ep, struct katcp_message *msg, void *data), void (*release)(struct katcp_dispatch *d, void *data), void *data, int fast)
 {
   struct katcp_shared *s;
 
@@ -331,6 +338,10 @@ int init_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *ep, int
   ep->e_wake    = wake;
   ep->e_release = release;
   ep->e_data    = data;
+
+  ep->e_fast_flush = fast;
+  ep->e_flush_runs = 0;
+  ep->e_flush_messages = 0;
   
   ep->e_state = ENDPOINT_STATE_UP | ENDPOINT_STATE_TX;
 
@@ -373,6 +384,7 @@ static void clear_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint
     (*(ep->e_release))(d, ep->e_data);
     ep->e_release = NULL;
   }
+
   ep->e_data = NULL;
 
   ep->e_next = NULL;
@@ -642,6 +654,9 @@ int flush_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *ep)
 int release_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *ep)
 {
   int count;
+  struct katcp_shared *s;
+
+  s = d->d_shared;
 
   sane_endpoint_katcp(ep);
 
@@ -664,6 +679,8 @@ int release_endpoint_katcp(struct katcp_dispatch *d, struct katcp_endpoint *ep)
   count = flush_endpoint_katcp(d, ep);
 
   ep->e_state = ENDPOINT_STATE_GONE;
+
+  s->s_epcount--;
 
   return count;
 
@@ -722,8 +739,9 @@ void run_endpoints_katcp(struct katcp_dispatch *d)
 {
   struct katcp_endpoint *ep, *ex, *en;
   struct katcp_shared *s;
-  struct katcp_message *msg, *msx;
+  struct katcp_message *msg;
   int result;
+  unsigned int count;
 #ifdef DEBUG
   char *ptr;
 #endif
@@ -735,96 +753,107 @@ void run_endpoints_katcp(struct katcp_dispatch *d)
   while(ep){
 
     if(ep->e_state & ENDPOINT_STATE_UP){
-      msg = get_precedence_head_gueue_katcl(ep->e_queue, ep->e_precedence);
-      if(msg != NULL){
+
+      count = 0;
+
+      do{
+        msg = get_precedence_head_gueue_katcl(ep->e_queue, ep->e_precedence);
+        if(msg != NULL){
 #ifdef DEBUG
-        if(msg->m_parse){
-          ptr = get_string_parse_katcl(msg->m_parse, 0);
-        } else {
-          ptr = NULL;
-        }
-        fprintf(stderr, "endpoint[%p]: got message %p (from=%p, parse[%p]=%s ...)\n", ep, msg, msg->m_from, msg->m_parse, ptr);
+          if(msg->m_parse){
+            ptr = get_string_parse_katcl(msg->m_parse, 0);
+          } else {
+            ptr = NULL;
+          }
+          fprintf(stderr, "endpoint[%p]: got message %p (from=%p, parse[%p]=%s ...)\n", ep, msg, msg->m_from, msg->m_parse, ptr);
 #endif
 #ifdef KATCP_CONSISTENCY_CHECKS
-        if(msg->m_to != ep){
-          fprintf(stderr, "endpoint[%p]: consistency failure: message destined for endpoint %p\n", msg->m_to, ep);
-          abort();
-        }
-#endif
-        if(ep->e_wake){
-          result = (*(ep->e_wake))(d, ep, msg, ep->e_data);
-        } else {
-#ifdef DEBUG
-          fprintf(stderr, "endpoint[%p]: unusual condition - endpoint saw message despite having no wake handler set\n", ep);
-#endif          
-          result = KATCP_RESULT_FAIL;
-        }
-#ifdef DEBUG
-        fprintf(stderr, "endpoint[%p]: callback %p returns %d\n", ep, ep->e_wake, result);
-#endif
-        switch(result){
-
-          case KATCP_RESULT_OWN :
-            /* all comms done internal to wake callback */
-            if(remove_datum_gueue_katcl(ep->e_queue, msg) == NULL){
-#ifdef KATCP_CONSISTENCY_CHECKS
-              fprintf(stderr, "endpoint: major corruption in queue: unable to remove %p\n", msg);
-              abort();
-#endif
-            }
-            destroy_message_katcp(d, msg);
-            /* WARNING: fall - pause also removes queued message */
-          case KATCP_RESULT_PAUSE :
-#ifdef KATCP_CONSISTENCY_CHECKS
-            /* TODO: check that we aren't in a HIGH state already, check that only requests stall the processing queue */
-#endif
-            precedence_endpoint_katcp(d, ep, ENDPOINT_PRECEDENCE_HIGH);
-            break;
-
-          case KATCP_RESULT_OK :
-          case KATCP_RESULT_FAIL :
-          case KATCP_RESULT_INVALID :
-
-            if(remove_datum_gueue_katcl(ep->e_queue, msg) == NULL){
-#ifdef KATCP_CONSISTENCY_CHECKS
-              fprintf(stderr, "endpoint: major corruption in queue: unable to remove %p\n", msg);
-              abort();
-#endif
-            }
-            if(is_request_parse_katcl(msg->m_parse)){
-              turnaround_endpoint_katcp(d, ep, msg, result, NULL);
-            } else {
-              destroy_message_katcp(d, msg);
-            }
-
-            break;
-
-          case KATCP_RESULT_YIELD :
-#if 0
-            /* WARNING: redundant, run for all cases below, but case needed to avoid triggering paranoia check */
-            mark_busy_katcp(d);
-#endif
-            break;
-
-          default :
-#ifdef KATCP_CONSISTENCY_CHECKS
-            fprintf(stderr, "endpoint: bad return code %d from wake callback\n", result);
+          if(msg->m_to != ep){
+            fprintf(stderr, "endpoint[%p]: consistency failure: message destined for endpoint %p\n", msg->m_to, ep);
             abort();
+          }
 #endif
-            break;
-        }
-
-        msx = get_precedence_head_gueue_katcl(ep->e_queue, ep->e_precedence);
-        if(msx){
-          mark_busy_katcp(d);
-        }
-
+          if(ep->e_wake){
+            result = (*(ep->e_wake))(d, ep, msg, ep->e_data);
+            count++;
+          } else {
 #ifdef DEBUG
-      } else {
-        fprintf(stderr, "endpoint[%p]: idle\n", ep);
+            fprintf(stderr, "endpoint[%p]: unusual condition - endpoint saw message despite having no wake handler set\n", ep);
+#endif          
+            result = KATCP_RESULT_FAIL;
+          }
+#ifdef DEBUG
+          fprintf(stderr, "endpoint[%p]: callback %p returns %d\n", ep, ep->e_wake, result);
 #endif
+          switch(result){
+
+            case KATCP_RESULT_OWN :
+              /* all comms done internal to wake callback */
+              if(remove_datum_gueue_katcl(ep->e_queue, msg) == NULL){
+#ifdef KATCP_CONSISTENCY_CHECKS
+                fprintf(stderr, "endpoint: major corruption in queue: unable to remove %p\n", msg);
+                abort();
+#endif
+              }
+              destroy_message_katcp(d, msg);
+              precedence_endpoint_katcp(d, ep, ENDPOINT_PRECEDENCE_HIGH);
+              break;
+            case KATCP_RESULT_PAUSE :
+#ifdef KATCP_CONSISTENCY_CHECKS
+              /* TODO: check that we aren't in a HIGH state already, check that only requests stall the processing queue */
+#endif
+              precedence_endpoint_katcp(d, ep, ENDPOINT_PRECEDENCE_HIGH);
+              msg = NULL;
+              break;
+
+            case KATCP_RESULT_OK :
+            case KATCP_RESULT_FAIL :
+            case KATCP_RESULT_INVALID :
+
+              if(remove_datum_gueue_katcl(ep->e_queue, msg) == NULL){
+#ifdef KATCP_CONSISTENCY_CHECKS
+                fprintf(stderr, "endpoint: major corruption in queue: unable to remove %p\n", msg);
+                abort();
+#endif
+              }
+              if(is_request_parse_katcl(msg->m_parse)){
+                turnaround_endpoint_katcp(d, ep, msg, result, NULL);
+              } else {
+                destroy_message_katcp(d, msg);
+              }
+
+              break;
+
+            case KATCP_RESULT_YIELD :
+#if 0
+              /* WARNING: redundant, run for all cases below, but case needed to avoid triggering paranoia check */
+              mark_busy_katcp(d);
+#endif
+              msg = NULL;
+              break;
+
+            default :
+#ifdef KATCP_CONSISTENCY_CHECKS
+              fprintf(stderr, "endpoint: bad return code %d from wake callback\n", result);
+              abort();
+#endif
+              break;
+          }
+
+        }
+      } while(ep->e_fast_flush && msg);
+
+      if(count){
+#ifdef DEBUG
+        fprintf(stderr, "endpoint[%p]: looped %u times\n", ep, count);
+#endif
+        ep->e_flush_runs++;
+        ep->e_flush_messages += count;
       }
 
+      if(get_precedence_head_gueue_katcl(ep->e_queue, ep->e_precedence)){
+        mark_busy_katcp(d);
+      }
     }
 
     if((ep->e_state == ENDPOINT_STATE_GONE) && (ep->e_refcount <= 0)){
@@ -866,6 +895,9 @@ void show_endpoint_katcp(struct katcp_dispatch *d, char *prefix, int level, stru
   log_message_katcp(d, level, NULL, "%s endpoint %p size %u", prefix, ep, size_gueue_katcl(ep->e_queue));
   log_message_katcp(d, level, NULL, "%s endpoint %p references %u", prefix, ep, ep->e_refcount);
   log_message_katcp(d, level, NULL, "%s endpoint %p state 0x%x", prefix, ep, ep->e_state);
+  log_message_katcp(d, level, NULL, "%s endpoint %p flushes %s", prefix, ep, ep->e_fast_flush ? "quickly" : "slowly");
+  log_message_katcp(d, level, NULL, "%s endpoint %p ran %u times", prefix, ep, ep->e_flush_runs);
+  log_message_katcp(d, level, NULL, "%s endpoint %p drained %u messages", prefix, ep, ep->e_flush_messages);
 }
 
 #endif

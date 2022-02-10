@@ -237,7 +237,7 @@ struct bof_state *open_bof_fd(struct katcp_dispatch *d, int fd)
   if(lseek(fd, 0, SEEK_SET) < 0){
     return NULL;
   }
-  
+
 #if 0
   magic_t cookie;
   const char *mf;
@@ -347,10 +347,10 @@ struct bof_state *open_bof_fd(struct katcp_dispatch *d, int fd)
 #endif
     rr = gzread(bs->b_gzf, bs->b_strings + have, bs->b_str_size - have);
     switch(rr){
-      case -1 : 
+      case -1 :
         switch(errno){
           case EAGAIN :
-          case EINTR : 
+          case EINTR :
             break;
           default :
             log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "string table read failed: %s", strerror(errno));
@@ -362,12 +362,12 @@ struct bof_state *open_bof_fd(struct katcp_dispatch *d, int fd)
         log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "encountered end of file while reading string table");
         close_bof(d, bs);
         return NULL;
-      default : 
+      default :
         have += rr;
         break;
     }
   } while(have < bs->b_str_size);
-            
+
   bs->b_strings[bs->b_str_size] = '\0';
 
   return bs;
@@ -384,8 +384,8 @@ struct bof_state *open_bof(struct katcp_dispatch *d, char *name)
   }
 
   log_message_katcp(d, KATCP_LEVEL_DEBUG, NULL, "opened boffile %s", name);
-  
-  return open_bof_fd(d, fd); 
+
+  return open_bof_fd(d, fd);
 }
 
 int program_bof(struct katcp_dispatch *d, struct bof_state *bs, char *device)
@@ -437,7 +437,7 @@ int program_bof(struct katcp_dispatch *d, struct bof_state *bs, char *device)
         log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "encountered EOF in bitstream with %d bytes still to load", need);
         close(dfd);
         return -1;
-      default : 
+      default :
         need -= rr;
         have = 0;
         do{
@@ -458,7 +458,7 @@ int program_bof(struct katcp_dispatch *d, struct bof_state *bs, char *device)
               log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "write to fpga failed: %s", strerror(errno));
               close(dfd);
               return -1;
-            default : 
+            default :
               have += wr;
               break;
           }
@@ -542,14 +542,18 @@ int index_bof(struct katcp_dispatch *d, struct bof_state *bs)
       tr->r_top_register = top;
     }
 
+    if(tr->r_bot_register < br.loc){
+      tr->r_bot_register = br.loc;
+    }
+
     switch(br.mode){
-      case IORM_READ : 
+      case IORM_READ :
         te->e_mode = TBS_READABLE;
         break;
-      case IORM_WRITE : 
+      case IORM_WRITE :
         te->e_mode = TBS_WRITABLE;
         break;
-      case IORM_READWRITE : 
+      case IORM_READWRITE :
         te->e_mode = TBS_WRABLE;
         break;
       default :

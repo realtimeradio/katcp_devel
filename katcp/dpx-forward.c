@@ -159,7 +159,7 @@ struct katcl_parse *generate_relay_forward(struct katcp_dispatch *d, struct forw
   unsigned int size;
   int flags, run, result, i, limit;
 
-  px = create_parse_katcl();
+  px = create_referenced_parse_katcl();
   if(px == NULL){
     return NULL;
   }
@@ -488,7 +488,7 @@ int relay_generic_group_cmd_katcp(struct katcp_dispatch *d, int argc)
   fprintf(stderr, "dpx[%p]: sending %s ...(%d) from endpoint %p to endpoint %p at dpx[%p]\n", fx, cmd, argc, source, target, fy);
 #endif
 
-  px = create_parse_katcl();
+  px = create_referenced_parse_katcl();
   if(px == NULL){
     return extra_response_katcp(d, KATCP_RESULT_FAIL, KATCP_FAIL_MALLOC);
   }
@@ -505,6 +505,7 @@ int relay_generic_group_cmd_katcp(struct katcp_dispatch *d, int argc)
     len = strlen(cmd);
     ptr = malloc(len + 2);
     if(ptr == NULL){
+      destroy_parse_katcl(px);
       return extra_response_katcp(d, KATCP_RESULT_FAIL, KATCP_FAIL_MALLOC);
     }
 
@@ -525,6 +526,11 @@ int relay_generic_group_cmd_katcp(struct katcp_dispatch *d, int argc)
     return KATCP_RESULT_FAIL;
   }
 
+  destroy_parse_katcl(px);
+#ifdef KATCP_CONSISTENCY_CHECKS
+  px = NULL;
+#endif
+
   if(cmd[0] == KATCP_REQUEST){
     ptr = cmd + 1;
   } else {
@@ -533,8 +539,16 @@ int relay_generic_group_cmd_katcp(struct katcp_dispatch *d, int argc)
 
   /* TODO: use wrappers to access fx members */
 
-  if(callback_flat_katcp(d, fx->f_current_endpoint, fx->f_rx, target, &complete_relay_generic_group_cmd_katcp, ptr, KATCP_REPLY_HANDLE_REPLIES | KATCP_REPLY_HANDLE_INFORMS)){
-    log_message_katcp(d, KATCP_LEVEL_TRACE, NULL, "unable to register callback for %s", ptr);
+  flags = KATCP_REPLY_HANDLE_REPLIES;
+  if(fx->f_flags & KATCP_FLAT_INSTALLINFO){
+    flags |= KATCP_REPLY_HANDLE_INFORMS;
+  }
+
+  if(callback_flat_katcp(d, fx->f_current_endpoint, fx->f_rx, target, &complete_relay_generic_group_cmd_katcp, ptr, flags)){
+#ifdef KATCP_CONSISTENCY_CHECKS
+    fprintf(stderr, "unable to register relay callback for %s from %s to %s\n", ptr, fx->f_name, fy->f_name);
+#endif
+    log_message_katcp(d, KATCP_LEVEL_TRACE, NULL, "unable to register relay callback for %s from %s to %s", ptr, fx->f_name, fy->f_name);
     return KATCP_RESULT_FAIL;
   }
 
@@ -548,7 +562,7 @@ int perform_forward_symbolic_group_cmd_katcp(struct katcp_dispatch *d, int argc)
   struct katcp_cmd_item *ix;
   struct katcp_flat *fx, *fy;
   struct forward_symbolic_state *fs;
-  struct katcp_endpoint *target, *source, *origin;
+  struct katcp_endpoint *target, *source;  /*, *origin;*/
   struct katcl_parse *px;
   char *req;
 
@@ -613,6 +627,11 @@ int perform_forward_symbolic_group_cmd_katcp(struct katcp_dispatch *d, int argc)
     return KATCP_RESULT_FAIL;
   }
 
+  destroy_parse_katcl(px);
+#ifdef KATCP_CONSISTENCY_CHECKS
+  px = NULL;
+#endif
+
 #if 0
   /* TODO: use wrappers to access fx members */
   /* this code path is just added, presumed nodefective, defer testing it for some other time */
@@ -625,7 +644,10 @@ int perform_forward_symbolic_group_cmd_katcp(struct katcp_dispatch *d, int argc)
 #else
 
   if(callback_flat_katcp(d, fx->f_current_endpoint, fx->f_rx, target, &complete_relay_generic_group_cmd_katcp, "relay", KATCP_REPLY_HANDLE_REPLIES | KATCP_REPLY_HANDLE_INFORMS)){
-    log_message_katcp(d, KATCP_LEVEL_WARN, NULL, "unable to register relay callback for %s", req);
+#ifdef KATCP_CONSISTENCY_CHECKS
+    fprintf(stderr, "unable to complete symbolic forward for %s from %s to %s\n", req, fx->f_name, fy->f_name);
+#endif
+    log_message_katcp(d, KATCP_LEVEL_WARN, NULL, "unable to complete symbolic forward for %s from %s to %s", req, fx->f_name, fy->f_name);
     return KATCP_RESULT_FAIL;
   }
 #endif

@@ -129,6 +129,7 @@ struct katcp_dispatch *setup_katcp(int fd)
     return NULL;
   }
 
+#ifdef KATCP_DEPRECATED
   register_katcp(d, "?halt",              "shuts the system down (?halt)", &halt_cmd_katcp);
   register_katcp(d, "?restart",           "restarts the system (?restart)", &restart_cmd_katcp);
   register_katcp(d, "?help",              "displays this help (?help [command])", &help_cmd_katcp);
@@ -145,6 +146,7 @@ struct katcp_dispatch *setup_katcp(int fd)
   register_katcp(d, "?sensor-limit",      "adjust sensor limits (?sensor-limit [sensor] [min|max] value)", &sensor_limit_cmd_katcp);
 
   register_katcp(d, "?version-list",      "list versions (?version-list)", &version_list_cmd_katcp);
+#endif
 
   return d;
 }
@@ -1547,15 +1549,18 @@ static int check_log_message_katcp(struct katcl_line *l, int sum, unsigned int l
 
 int log_message_katcp(struct katcp_dispatch *d, unsigned int priority, char *name, char *fmt, ...)
 {
+#define LOCAL_BUFFER_SIZE  64
   va_list args;
   int sum; 
   unsigned int level, i;
   struct katcp_shared *s;
   struct katcp_entry *e;
-  char *prefix;
+  char *prefix, *actual;
 #ifdef KATCP_EXPERIMENTAL
+  char buffer[LOCAL_BUFFER_SIZE];
   int count;
   struct katcl_parse *px;
+  struct katcp_flat *fx;
 #endif
 
   level = priority & KATCP_MASK_LEVELS;
@@ -1575,7 +1580,7 @@ int log_message_katcp(struct katcp_dispatch *d, unsigned int priority, char *nam
     prefix = name;
   } else {
     e = &(s->s_vector[s->s_mode]);
-    if(e->e_name){
+    if ((e) && (e->e_name)){
       prefix = e->e_name;
     } else {
       /* WARNING: not the most elegant option ... */
@@ -1583,18 +1588,28 @@ int log_message_katcp(struct katcp_dispatch *d, unsigned int priority, char *nam
     }
   }
 
+  actual = prefix;
 #ifdef KATCP_EXPERIMENTAL
+  fx = this_flat_katcp(d);
+  if ((fx) && (fx->f_name)){
+    if (fx->f_flags & KATCP_FLAT_LOGPREFIX){
+      snprintf(buffer, LOCAL_BUFFER_SIZE - 1, "%s.%s", fx->f_name, prefix);
+      buffer[LOCAL_BUFFER_SIZE - 1] = '\0';
+      actual = buffer;
+    }
+  }
+
   px = create_referenced_parse_katcl();
   if(px == NULL){
     return -1;
   }
   
   va_start(args, fmt);
-  sum = vlog_parse_katcl(px, level, prefix, fmt, args);
+  sum = vlog_parse_katcl(px, level, actual, fmt, args);
   va_start(args, fmt);
 
   if(sum > 0){
-    count = log_parse_katcp(d, priority, px);
+    count = log_parse_katcp(d, priority, 1, px);
     if(count < 0){
       sum = (-1);
     } else {
@@ -1619,7 +1634,7 @@ int log_message_katcp(struct katcp_dispatch *d, unsigned int priority, char *nam
     for(i = 0; i < s->s_used; i++){
       d = s->s_clients[i];
       va_start(args, fmt);
-      sum = check_log_message_katcp(d->d_line, sum, d->d_level, level, prefix, fmt, args);
+      sum = check_log_message_katcp(d->d_line, sum, d->d_level, level, actual, fmt, args);
       va_end(args);
     }
   } else {
@@ -1629,6 +1644,7 @@ int log_message_katcp(struct katcp_dispatch *d, unsigned int priority, char *nam
   }
  
   return sum;
+#undef LOCAL_BUFFER_SIZE
 }
 
 int extra_response_katcp(struct katcp_dispatch *d, int code, char *fmt, ...)
@@ -2113,6 +2129,34 @@ int append_hex_long_katcp(struct katcp_dispatch *d, int flags, unsigned long v)
 
   return append_hex_long_katcl(d->d_line, flags, v);
 }
+
+#ifdef KATCP_ENABLE_LLINT
+int append_unsigned_llong_katcp(struct katcp_dispatch *d, int flags, unsigned long long v)
+{
+  sane_katcp(d);
+
+#ifdef KATCP_EXPERIMENTAL
+  if(this_flat_katcp(d)){
+    return append_unsigned_llong_flat_katcp(d, flags, v);
+  }
+#endif
+
+  return append_unsigned_llong_katcl(d->d_line, flags, v);
+}
+
+int append_signed_llong_katcp(struct katcp_dispatch *d, int flags, unsigned long long v)
+{
+  sane_katcp(d);
+
+#ifdef KATCP_EXPERIMENTAL
+  if(this_flat_katcp(d)){
+    return append_signed_llong_flat_katcp(d, flags, v);
+  }
+#endif
+
+  return append_signed_llong_katcl(d->d_line, flags, v);
+}
+#endif
 
 #ifdef KATCP_USE_FLOATS
 int append_double_katcp(struct katcp_dispatch *d, int flags, double v)

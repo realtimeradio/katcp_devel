@@ -717,14 +717,19 @@ void usage(char *app)
 
 int main(int argc, char **argv)
 {
-  int i, j, c, verbose, detach, type, offset, fd, result, symbolic;
+  int i, j, c, verbose, type, offset, fd, result, symbolic;
+#if 0
+  int detach;
+#endif
   unsigned int flags, initial;
   char *app, *remote, *change, *label;
   struct mpx_state *ms;
 
   i = j = 1;
   app = argv[0];
+#if 0
   detach = 0;
+#endif
 
   verbose = 0;
   offset = 0;
@@ -782,7 +787,7 @@ int main(int argc, char **argv)
           verbose = 0;
           j++;
           break;
-
+#if 0
         case 'd' : 
           detach = 1;
           j++;
@@ -792,6 +797,7 @@ int main(int argc, char **argv)
           detach = 0;
           j++;
           break;
+#endif
 
         case 'e' : 
           type = TYPE_EXEC;

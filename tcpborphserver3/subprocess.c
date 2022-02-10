@@ -30,13 +30,18 @@ void replace_argv(struct katcp_dispatch *d, char *str)
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
 
-  if (tr == NULL)
+  if (tr == NULL){
     return;
+  }
+
+  if(tr->r_argv == NULL){
+    return;
+  }
 
   argc = tr->r_argc;
   argv = tr->r_argv;
-  
-  for (i=0; i<argc; i++){
+
+  for (i = 0; i < argc; i++){
     bzero(argv[i], strlen(argv[i]));
   }
 
@@ -47,7 +52,7 @@ void replace_argv(struct katcp_dispatch *d, char *str)
 #endif
 }
 
-struct katcp_job *run_child_process_tbs(struct katcp_dispatch *d, struct katcp_url *url, int (*call)(struct katcl_line *, void *), void *data, struct katcp_notice *n) 
+struct katcp_job *run_child_process_tbs(struct katcp_dispatch *d, struct katcp_url *url, int (*call)(struct katcl_line *, void *), void *data, struct katcp_notice *n)
 {
 #define TINY_BUFFER  4
   int fds[2], pfds[2], rr;
@@ -65,7 +70,7 @@ struct katcp_job *run_child_process_tbs(struct katcp_dispatch *d, struct katcp_u
     pfds[0] = (-1);
     pfds[1] = (-1);
   }
-  
+
   pid = fork();
   if(pid < 0){
     close(fds[0]);
@@ -113,7 +118,7 @@ struct katcp_job *run_child_process_tbs(struct katcp_dispatch *d, struct katcp_u
   if(pfds[0] >= 0){
     close(pfds[0]);
   }
- 
+
   xl = create_katcl(fds[0]);
   close(fds[1]);
 
@@ -121,22 +126,22 @@ struct katcp_job *run_child_process_tbs(struct katcp_dispatch *d, struct katcp_u
   for (i=0; i<1024; i++)
     if (i != fds[0])
       close(i);
-#endif 
+#endif
 
   replace_argv(d, url->u_str);
 
-#if 0 
+#if 0
   copies = 0;
   if (fds[0] != STDOUT_FILENO){
     if (dup2(fds[0], STDOUT_FILENO) != STDOUT_FILENO) {
-      sync_message_katcl(xl, KATCP_LEVEL_ERROR, NULL, "unable to set up standard output for child process %u (%s)", getpid(), strerror(errno)); 
+      sync_message_katcl(xl, KATCP_LEVEL_ERROR, NULL, "unable to set up standard output for child process %u (%s)", getpid(), strerror(errno));
       exit(EX_OSERR);
     }
     copies++;
   }
   if(fds[0] != STDIN_FILENO){
     if(dup2(fds[0], STDIN_FILENO) != STDIN_FILENO){
-      sync_message_katcl(xl, KATCP_LEVEL_ERROR, NULL, "unable to set up standard input for child process %u (%s)", getpid(), strerror(errno)); 
+      sync_message_katcl(xl, KATCP_LEVEL_ERROR, NULL, "unable to set up standard input for child process %u (%s)", getpid(), strerror(errno));
       exit(EX_OSERR);
     }
     copies++;

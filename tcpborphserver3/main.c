@@ -28,7 +28,7 @@
 
 void usage(char *app)
 {
-  printf("Usage: %s" 
+  printf("Usage: %s"
   " [-b bof-dir] [-f] [-h] [-i init-script] [-l log-file] [-m mode] [-p network-port]\n", app);
 
   printf("-b dir           directory containing bof files\n");
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
               init = argv[i] + j;
               break;
             case 'l':
-              lfile = argv[i] + j;  
+              lfile = argv[i] + j;
               break;
             case 'm' :
               mode = argv[i] + j;
@@ -154,7 +154,7 @@ int main(int argc, char **argv)
 
   if (!foreground){
     lfd = open(lfile, O_WRONLY | O_APPEND | O_CREAT | O_NOCTTY, S_IWUSR | S_IRUSR | S_IRGRP | S_IWGRP);
-      
+
     if (lfd < 0){
       fprintf(stderr,"%s: unable to open %s: %s\n",argv[0], TBS_LOGFILE, strerror(errno));
       return 1;

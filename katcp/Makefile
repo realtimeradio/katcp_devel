@@ -18,14 +18,14 @@ CFLAGS += -DVERSION=\"$(VERSION)\"
 CFLAGS += -DBUILD=\"$(BUILD)\"
 
 SUB = examples utils
-SRC = line.c netc.c dispatch.c loop.c log.c time.c shared.c misc.c server.c client.c ts.c nonsense.c notice.c job.c parse.c rpc.c queue.c map.c kurl.c version.c fork-parent.c avltree.c ktype.c stack.c services.c dbase.c arb.c spointer.c event.c bytebit.c endpoint.c generic-queue.c dpx-core.c dpx-forward.c dpx-katcp.c dpx-mgmt.c dpx-listen.c dpx-misc.c dpx-cmds.c dpx-vrbl.c dpx-info.c dpx-sensor.c parse-queue.c
-HDR = katcp.h katcl.h katpriv.h fork-parent.h avltree.h netc.h
+SRC = line.c netc.c dispatch.c loop.c log.c time.c shared.c misc.c server.c client.c ts.c nonsense.c notice.c job.c parse.c rpc.c queue.c map.c kurl.c version.c fork-parent.c avltree.c ktype.c stack.c services.c dbase.c arb.c spointer.c event.c bytebit.c endpoint.c generic-queue.c dpx-core.c dpx-forward.c dpx-katcp.c dpx-mgmt.c dpx-listen.c dpx-misc.c dpx-cmds.c dpx-vrbl.c dpx-info.c dpx-sensor.c dpx-server.c parse-queue.c heap.c
+HDR = katcp.h katcl.h katpriv.h fork-parent.h avltree.h netc.h heap.h
 
 OBJ = $(patsubst %.c,%.o,$(SRC))
 
 all: $(LIB)
 
-both: $(LIB) $(SHARED) 
+both: $(LIB)
 
 $(LIB): $(OBJ)
 	$(AR) rcs $(LIB) $(OBJ)

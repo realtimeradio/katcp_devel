@@ -304,7 +304,7 @@ static void *remove_index_gueue_katcl(struct katcl_gueue *g, unsigned int index)
   end = (g->g_head + g->g_count - 1) % g->g_size; /* WARNING: relies on count+head never being zero, hence earlier test */
 #ifdef KATCP_CONSISTENCY_CHECKS
   if(index > end){
-    fprintf(stderr, "generic queue: logic problem: attempting to remove %u, queue only valid from head=%u to head+count=%u+%u-1=%u", index, g->g_head, g->g_head, g->g_count, end);
+    fprintf(stderr, "generic queue: logic problem: attempting to remove %u, queue only valid from head=%u to head+count=%u+%u-1=%u\n", index, g->g_head, g->g_head, g->g_count, end);
     abort();
   }
 #endif

@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <sched.h>
 #include <sysexits.h>
+#include <fcntl.h>
 
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -24,7 +25,7 @@ int fork_parent()
   int p[2];
   pid_t pid;
   char buffer[READ_BUFFER];
-  int rr, status, result;
+  int rr, status, result, fd;
 
   if (pipe(p)) {
     return -1;
@@ -42,14 +43,25 @@ int fork_parent()
     close(p[0]);
     if (p[1] != STDERR_FILENO) {
       if (dup2(p[1], STDERR_FILENO) != STDERR_FILENO) {
-	exit(EX_OSERR);
+        exit(EX_OSERR);
       }
       close(p[1]);
     }
 
     close(STDOUT_FILENO);
     close(STDIN_FILENO);
-    /* TODO: could point STDIN and STDOUT at /dev/null */
+
+    /* point STDIN and STDOUT at /dev/null */
+    fd = open("/dev/null", O_RDWR);
+    if (fd < 0){
+      fprintf(stderr, "unable to open /dev/null for redirection\n");
+    } else {
+      if (fd != STDIN_FILENO){
+        dup2(fd, STDIN_FILENO);
+        close(fd);
+      }
+      dup2(fd, STDOUT_FILENO);
+    }
 
     setsid();
 
