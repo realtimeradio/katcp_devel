@@ -32,11 +32,16 @@
  */
 #endif
 
+#ifdef __ARM_ARCH_8A
+//TODO: Use the FPGA Manager enumerations to check state
+#define FPGA_STATE_OK "operating\n"
+#endif
+
 #define MTU               1024*64
 
 #define UPLOAD_LABEL      "upload"
 
-#define UPLOAD_TIMEOUT    30
+#define UPLOAD_TIMEOUT    1000
 #define UPLOAD_PORT       7146
 
 #define FPG_HEADER 589377378
@@ -145,6 +150,7 @@ int subprocess_upload_tbs(struct katcl_line *l, void *data)
   gzFile gfd;
 #ifdef __ARM_ARCH_8A
   FILE *fpga_man;
+  FILE *fpga_state_file;
 #endif
 
   pd = data;
@@ -259,8 +265,32 @@ int subprocess_upload_tbs(struct katcl_line *l, void *data)
       sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "unable to open firmware file to write bitstream name");
       return -1;
     }
+    sync_message_katcl(l, KATCP_LEVEL_INFO, NULL, "Writing 'tcpborphserver.bin' to fpga_manager");
     fprintf(fpga_man, "tcpborphserver.bin\n");
     fclose(fpga_man);
+
+    // Check that / wait until the programming was successful
+    fpga_state_file = fopen(FPGA_MANAGER_STATE, "r");
+    char fpga_state[64];
+    char fpga_state_ok[] = FPGA_STATE_OK;
+    char *fpga_state_rv;
+    if(fpga_state_file == NULL){
+      sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "unable to open fpga manager state file");
+      return -1;
+    }
+    fpga_state_rv = fgets(fpga_state, 64, fpga_state_file);
+    if (!fpga_state_rv) {
+      sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "FPGA state read failed");
+      return -1;
+    }
+    fpga_state[63] = '\0';
+    if (!strcmp(fpga_state, fpga_state_ok)){
+      sync_message_katcl(l, KATCP_LEVEL_INFO, NULL, "FPGA state register suggests programming was OK");
+    } else {
+      sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "FPGA state: %s\n", fpga_state);
+      return -1;
+    }
+    fclose(fpga_state_file);
   }
 #endif
 
