@@ -731,27 +731,439 @@ int rfdc_status_cmd(struct katcp_dispatch *d, int argc) {
 
   // TODO: will need to be smart between dual-/quad-tile
   for (int i = 0; i < NUM_TILES; i++) {
-  prepend_inform_katcp(d);
-  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ADC%d: Enabled %d, State: %d PLL: %d", i,
-             ip_status.ADCTileStatus[i].IsEnabled,
-             ip_status.ADCTileStatus[i].TileState,
-             ip_status.ADCTileStatus[i].PLLState);
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ADC%d: Enabled %d, State: %d PLL: %d", i,
+               ip_status.ADCTileStatus[i].IsEnabled,
+               ip_status.ADCTileStatus[i].TileState,
+               ip_status.ADCTileStatus[i].PLLState);
+  }
+
+  for (int i=0; i<NUM_TILES; i++) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "DAC%d: Enabled %d, State: %d PLL: %d", i,
+               ip_status.DACTileStatus[i].IsEnabled,
+               ip_status.DACTileStatus[i].TileState,
+               ip_status.DACTileStatus[i].PLLState);
   }
 
   return KATCP_RESULT_OK;
 
 }
 
+/*
+  ?rfdc-run-mts tile-mask TODO: could add a [verbose] option for report
+    execute multi-tile synchronization for the selected tiles indicated by
+    `tile-mask`. Inform with verbose dump of mts status.
+*/
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // mts cmd variables
+  int result;
+  unsigned int tilemask;
+  unsigned int factor;
 
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "mts not implemented");
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse tile mask
+  if (argc < 2) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify tile mask for tiles to sync");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tilemask = arg_unsigned_long_katcp(d, 1);
+  if (tilemask > 0xf) { // TODO: check range of values, irc it is a 4-bit mask each bit a tile
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile mask must be in range (0-%d)", 0xf);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // run mts, report results
+  int tmp = XRFDC_MTS_DAC_MARKER_LOC_MASK(3);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "macro defined, result=%d", tmp);
+  // TODO: this init of sync config should probably live where rfdc driver is
+  // init to allow for calling report mts status
+  XRFdc_MultiConverter_Init(&rfdc->sync_config, 0, 0); //pl_codes and t1_codes args set to `0` when not used
+  rfdc->sync_config.Tiles = tilemask;
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "tile mask set to: 0x%08x", rfdc->sync_config.Tiles);
+  result = XRFdc_MultiConverter_Sync(rfdc->xrfdc, XRFDC_ADC_TILE, &rfdc->sync_config);
+  if(result != XRFDC_MTS_OK) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL,"mts sync fail, error code 0x%08x", result);
+    return KATCP_RESULT_OWN;
+    //prepend_inform_katcp(d);
+    //append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+    //  "mts synch fail, error code, 0x%08x", result);
+    //return RESULT_KATCP_FAIL;
+  }
+
+  // inform with detailed report TODO: could make report a verbose cmd option
+  if(result == XRFDC_MTS_OK) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "mts sync report");
+    for(int tile=0; tile<NUM_TILES; tile++) {
+      if( (1<<tile) & rfdc->sync_config.Tiles) {
+        XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: Latency(T1) = %3d, Adjusted Delay Offset(T%d) = %3d, Marker Delay = %d",
+          tile, rfdc->sync_config.Latency[tile], factor,
+          rfdc->sync_config.Offset[tile], rfdc->sync_config.Marker_Delay);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: PLL DTC Code = %d", tile, rfdc->sync_config.DTC_Set_PLL.DTC_Code[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: PLL Num Windows = %d", tile, rfdc->sync_config.DTC_Set_PLL.Num_Windows[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: PLL Max Gap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Max_Gap[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: PLL Min Gap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Min_Gap[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: PLL Max Overlap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Max_Overlap[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: T1 DTC Code = %d", tile, rfdc->sync_config.DTC_Set_T1.DTC_Code[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: T1 Num Windows = %d", tile, rfdc->sync_config.DTC_Set_T1.Num_Windows[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: T1 Max Gap = %d", tile, rfdc->sync_config.DTC_Set_T1.Max_Gap[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: T1 Min Gap = %d", tile, rfdc->sync_config.DTC_Set_T1.Min_Gap[tile]);
+        prepend_inform_katcp(d);
+        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+          "ADC%d: T1 Max Overlap = %d", tile, rfdc->sync_config.DTC_Set_T1.Max_Overlap[tile]);
+      }
+    }
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "mts complete");
+  }
 
   return KATCP_RESULT_OK;
 }
 
-int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
+/*
+  ?rfdc-mts-report
 
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "nco update not implemented");
+*/
+
+int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc) {
+
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // mts cmd variables
+  int result;
+  unsigned int factor;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "mts sync report");
+  for(int tile=0; tile<NUM_TILES; tile++) {
+    if( (1<<tile) & rfdc->sync_config.Tiles) {
+      XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: Latency(T1) = %3d, Adjusted Delay Offset(T%d) = %3d, Marker Delay = %d",
+        tile, rfdc->sync_config.Latency[tile], factor,
+        rfdc->sync_config.Offset[tile], rfdc->sync_config.Marker_Delay);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: PLL DTC Code = %d", tile, rfdc->sync_config.DTC_Set_PLL.DTC_Code[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: PLL Num Windows = %d", tile, rfdc->sync_config.DTC_Set_PLL.Num_Windows[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: PLL Max Gap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Max_Gap[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: PLL Min Gap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Min_Gap[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: PLL Max Overlap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Max_Overlap[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: T1 DTC Code = %d", tile, rfdc->sync_config.DTC_Set_T1.DTC_Code[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: T1 Num Windows = %d", tile, rfdc->sync_config.DTC_Set_T1.Num_Windows[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: T1 Max Gap = %d", tile, rfdc->sync_config.DTC_Set_T1.Max_Gap[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: T1 Min Gap = %d", tile, rfdc->sync_config.DTC_Set_T1.Min_Gap[tile]);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: T1 Max Overlap = %d", tile, rfdc->sync_config.DTC_Set_T1.Max_Overlap[tile]);
+    }
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+/*
+
+  ?rfdc-report-mts-latency
+    use informs to report mts tile T1 (sample clock) latency and offsets (units
+    of PL word) added to each fifo
+*/
+int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  unsigned int factor;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // report status
+  for(int tile=0; tile<NUM_TILES; tile++) {
+    if( (1<<tile) & rfdc->sync_config.Tiles) {
+      XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+        "ADC%d: Latency(T1) =%3d, Adjusted Delay Offset(T%d) =%3d",
+        tile, rfdc->sync_config.Latency[tile], factor, rfdc->sync_config.Offset[tile]);
+    }
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+/*
+  ?rfdc-report-mixer tile-idx blk-idx [adc|dac]
+  get mixer information
+*/
+
+int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  int result;
+  unsigned int tile, blk;
+  XRFdc_Mixer_Settings mixer;
+  char* type;
+  int mixer_type;
+  double nco;
+
+  // TODO: this header code parsing args/setup is the same as update-nco, make function for reuse
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and desired nco freq in MHz");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile > NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk > NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  nco = arg_double_katcp(d, 3);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set nco freq: %.3f MHz", nco);
+  // TODO: validate values, I know the valid values are [-fs/2, fs/2] but irc
+  // the driver will internally allow any value but should just have the effect
+  // of spectral aliasing
+
+  type = "adc"; // default to adc mixer
+  mixer_type = XRFDC_ADC_TILE;
+  if (argc > 4) {
+    type = arg_string_katcp(d, 4);
+    mixer_type = (strcmp(type, "adc") == 0) ? XRFDC_ADC_TILE : XRFDC_DAC_TILE;
+  }
+
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "getting mixer settings for %s: tile:%d blk:%d", type, tile, blk);
+
+  // use getter to populate mixer settings
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // could also just return the enum and have casperfpga convert to string
+  // and this may be better because looking at xrfdc.h, there are more things
+  // that may be useful to report that are enums (mixer type, event source,
+  // coarse mixer setting) and all these enums here would be cumbersome
+  //
+  // TODO: is there a way to just serialize a struct over? this way all of the
+  // status work can be done in casperfpga?
+  char* mode;
+  switch (mixer.MixerMode) {
+    case XRFDC_MIXER_MODE_OFF:
+      mode = "off";
+      break;
+    case XRFDC_MIXER_MODE_C2C:
+      mode = "c2c";
+      break;
+    case XRFDC_MIXER_MODE_C2R:
+      mode = "c2r";
+      break;
+    case XRFDC_MIXER_MODE_R2C:
+      mode = "r2c";
+      break;
+    case XRFDC_MIXER_MODE_R2R:
+      mode = "r2r";
+      break;
+    default: mode = "mixer mode error";
+  }
+
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "mode: %s, %d", mode, mixer.MixerMode);
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "fine freq: %f", mixer.Freq);
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "coarse freq: %d", mixer.CoarseMixFreq); // enum
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "phase offset: %g", mixer.PhaseOffset);
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "event source: %d", mixer.EventSource);
+
+  return KATCP_RESULT_OK;
+}
+
+/*
+  ?rfdc-update-nco tile-idx blk-idx nco-ghz [adc|dac]
+    update complex mixer nco freq
+
+    TODO:
+    * for mts/mcs applications the event update needs to be implemented to
+      handle that case. Here, just a simple update of the nco freq.
+    * this method is for a single adc tile/blk a common use case will be to just
+      set for all enabled tile/blk
+    * tile type option available, but throw not implemented for DAC
+*/
+int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  int result;
+  unsigned int tile, blk;
+  XRFdc_Mixer_Settings mixer;
+  char* type;
+  int mixer_type;
+  double nco;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and desired nco freq in MHz");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile > NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk > NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  nco = arg_double_katcp(d, 3);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set nco freq: %.3f MHz", nco);
+  // TODO: validate values, I know the valid values are [-fs/2, fs/2] but irc
+  // the driver will internally allow any value but should just have the effect
+  // of spectral aliasing
+
+  mixer_type = XRFDC_ADC_TILE; // default to adc mixer
+  if (argc > 4) {
+    type = arg_string_katcp(d, 4);
+    mixer_type = (strcmp(type, "adc") == 0) ? XRFDC_ADC_TILE : XRFDC_DAC_TILE;
+  }
+
+  // TODO extend DAC implementation
+  if (mixer_type == XRFDC_DAC_TILE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "setting dac mixer nco not implemented");
+    // TODO see how to get invalid msg of not implemented at casperfpga client
+    return KATCP_RESULT_INVALID;
+  }
+
+  // use getter to populate mixer settings
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // change mixer freq settings, set, and call update
+  mixer.Freq = nco;
+  result = XRFdc_SetMixerSettings(rfdc->xrfdc, mixer_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // TODO: mts/mcs applications will require control of event source update
+  XRFdc_UpdateEvent(rfdc->xrfdc, mixer_type, tile, blk, mixer.EventSource);
+  // TODO: how to know update event was successful?
+
+  // read back?
 
   return KATCP_RESULT_OK;
 }
@@ -908,5 +1320,46 @@ int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc) {
     log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "dsa not supported on this rfsoc");
     return KATCP_RESULT_INVALID;
   }
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_driver_ver_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  float driver_ver;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if (tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  driver_ver = XRFdc_GetDriverVersion();
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "version: %f", driver_ver);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_master_tile_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int master_tile;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if (tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  master_tile = XRFdc_GetMasterTile(rfdc->xrfdc, XRFDC_ADC_TILE);
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "master tile: %d", master_tile);
+
   return KATCP_RESULT_OK;
 }
