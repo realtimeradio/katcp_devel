@@ -27,6 +27,8 @@
 #define NUM_TILES 4
 #define NUM_BLKS  4
 
+#define XST_SUCCESS 1
+
 struct tbs_rfdc {
 
   XRFdc *xrfdc;
@@ -55,7 +57,7 @@ int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_update_nco_cmd_mts(struct katcp_dispatch *d, int argc);
+int rfdc_update_nco_mts_cmd(struct katcp_dispatch *d, int argc);
 
 int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc);
 int tbs_dto_cmd(struct katcp_dispatch *d, int argc);

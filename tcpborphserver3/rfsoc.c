@@ -387,7 +387,7 @@ int init_rfdc(struct katcp_dispatch *d, struct tbs_rfdc *rfdc) {
   struct metal_init_params init_param = METAL_INIT_DEFAULTS;
   // TODO is it worth wrapping metal log up somehow in katcp log?
   log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "current metal loglevel=%d\n", init_param.log_level);
-  init_param.log_level = METAL_LOG_DEBUG;
+  init_param.log_level = METAL_LOG_DEBUG | METAL_LOG_ERROR;
   log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "updated metal loglevel=%d\n", init_param.log_level);
 
   int metal_error = metal_init(&init_param);
@@ -992,8 +992,8 @@ int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // parse adc tile, block and desired attenuation parameters
-  if (argc < 4) {
+  // parse adc tile, block
+  if (argc < 3) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and desired nco freq in MHz");
     return KATCP_RESULT_INVALID;
   }
@@ -1010,23 +1010,17 @@ int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_INVALID;
   }
 
-  nco = arg_double_katcp(d, 3);
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set nco freq: %.3f MHz", nco);
-  // TODO: validate values, I know the valid values are [-fs/2, fs/2] but irc
-  // the driver will internally allow any value but should just have the effect
-  // of spectral aliasing
-
   type = "adc"; // default to adc mixer
   mixer_type = XRFDC_ADC_TILE;
-  if (argc > 4) {
-    type = arg_string_katcp(d, 4);
+  if (argc > 3) {
+    type = arg_string_katcp(d, 3);
     mixer_type = (strcmp(type, "adc") == 0) ? XRFDC_ADC_TILE : XRFDC_DAC_TILE;
   }
 
   log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "getting mixer settings for %s: tile:%d blk:%d", type, tile, blk);
 
   // use getter to populate mixer settings
-  result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &mixer);
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, mixer_type, tile, blk, &mixer);
   if (result != XRFDC_SUCCESS) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
     return KATCP_RESULT_FAIL;
@@ -1168,13 +1162,24 @@ int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
   return KATCP_RESULT_OK;
 }
 
-int rfdc_update_nco_cmd_mts(struct katcp_dispatch *d, int argc) {
+/*
+  ?rfdc-update-nco-mts adc-idx dac-idx nco-ghz
+    update complex mixer nco freq while keeping converters in sync
+    adc-idx and dac-idx are 16 bit hex numbers indicating which converters
+    to update and sync. (ex: F 1 will update all ADCs and DAC00)
+
+    TODO:
+      * implement the hex indicators. right now it just sets all ADCs and DAC00
+*/
+int rfdc_update_nco_mts_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
   // cmd variables
   int result;
   int result_adc;
   int result_dac;
+  int status_dac;
+  int SysRefEnable;
   unsigned int tile, blk;
   XRFdc_Mixer_Settings adc_mixer[NUM_TILES][NUM_BLKS];
   XRFdc_Mixer_Settings dac_mixer[NUM_TILES][NUM_BLKS];
@@ -1212,13 +1217,15 @@ int rfdc_update_nco_cmd_mts(struct katcp_dispatch *d, int argc) {
     for (blk = 0; blk < NUM_BLKS; blk++) {
       result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &adc_mixer[tile][blk]);
       if (result != XRFDC_SUCCESS) {
-        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get adc mixer settings");
+        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get adc %d %d mixer settings", tile, blk);
         return KATCP_RESULT_FAIL;
       }
-      result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk, &dac_mixer[tile][blk]);
-      if (result != XRFDC_SUCCESS) {
-        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get dac mixer settings");
-        return KATCP_RESULT_FAIL;
+      if (tile == 0 & blk == 0) { // only updating DAC 00 for the moment
+        result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk, &dac_mixer[tile][blk]);
+        if (result != XRFDC_SUCCESS) {
+          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get dac %d %d mixer settings", tile, blk);
+          return KATCP_RESULT_FAIL;
+        }
       }
     }
   }
@@ -1226,17 +1233,12 @@ int rfdc_update_nco_cmd_mts(struct katcp_dispatch *d, int argc) {
   // following directions from pg269 pg 182
   // currently all adcs and dacs are set to the same nco
 
-  mixer.EventSource = XRFDC_EVNT_SRC_SYSREF;
-  // trying a single device
-
   // 1. Disable sysref receiver
   SysRefEnable = 0;
   // is adc and dac sync config the same?
-  status_dac|=XRFdc_MTS_Sysref_Config(rfdc->xrfdc, &rfdc->sync_config, &rfdc->sync_config, SysRefEnable);
+  status_dac = XRFdc_MTS_Sysref_Config(rfdc->xrfdc, &rfdc->sync_config, &rfdc->sync_config, SysRefEnable);
 
   // 2. Arm mixer settings
-
-  mixer.Freq = nco;
   for (tile = 0; tile < NUM_TILES; tile++) {
     for (blk = 0; blk < NUM_BLKS; blk++) {
       // set update event to sysref
@@ -1247,15 +1249,17 @@ int rfdc_update_nco_cmd_mts(struct katcp_dispatch *d, int argc) {
       dac_mixer[tile][blk].Freq = nco;
       // set new mixer settings
       result_adc = XRFdc_SetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &adc_mixer[tile][blk]);
-      result_dac = XRFdc_SetMixerSettings(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk, &dac_mixer[tile][blk]);
       // Wait for successful return
-      if (result_adc!=XST_SUCCESS) {
+      if (result_adc!=XRFDC_SUCCESS) {
         log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set adc mixer tile %d blk %d settings",tile, blk);
         return KATCP_RESULT_FAIL;
       }
-      if (result_dac!=XST_SUCCESS) {
-        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set dac mixer tile %d blk %d settings",tile, blk);
-        return KATCP_RESULT_FAIL;
+      if (tile == 0 & blk == 0) { // only updating DAC 00 for the moment
+        result_dac = XRFdc_SetMixerSettings(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk, &dac_mixer[tile][blk]);
+        if (result_dac!=XRFDC_SUCCESS) {
+          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set dac mixer tile %d blk %d settings",tile, blk);
+          return KATCP_RESULT_FAIL;
+        }
       }
     }
   }
@@ -1264,7 +1268,7 @@ int rfdc_update_nco_cmd_mts(struct katcp_dispatch *d, int argc) {
   // Enable analog sysref receiver
   SysRefEnable = 1;
   // is adc and dac sync config the same?
-  status_dac|=XRFdc_MTS_Sysref_Config(rfdc->xrfdc, &rfdc->sync_config, &rfdc->sync_config, SysRefEnable);
+  status_dac = XRFdc_MTS_Sysref_Config(rfdc->xrfdc, &rfdc->sync_config, &rfdc->sync_config, SysRefEnable);
 
   return KATCP_RESULT_OK;
 }
