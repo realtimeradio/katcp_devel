@@ -1165,11 +1165,8 @@ int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
 /*
   ?rfdc-update-nco-mts adc-idx dac-idx nco-ghz
     update complex mixer nco freq while keeping converters in sync
-    adc-idx and dac-idx are 16 bit hex numbers indicating which converters
-    to update and sync. (ex: F 1 will update all ADCs and DAC00)
-
-    TODO:
-      * implement the hex indicators. right now it just sets all ADCs and DAC00
+    adc-idx and dac-idx are 4 hex numbers indicating which converters
+    to update and sync. (ex: 0xFFFF 0x0001 will update all ADCs and DAC00)
 */
 int rfdc_update_nco_mts_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
@@ -1184,6 +1181,8 @@ int rfdc_update_nco_mts_cmd(struct katcp_dispatch *d, int argc) {
   XRFdc_Mixer_Settings adc_mixer[NUM_TILES][NUM_BLKS];
   XRFdc_Mixer_Settings dac_mixer[NUM_TILES][NUM_BLKS];
   char* type;
+  unsigned int adc_mask;
+  unsigned int dac_mask;
   double nco;
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
@@ -1199,13 +1198,14 @@ int rfdc_update_nco_mts_cmd(struct katcp_dispatch *d, int argc) {
   }
 
   // parse adc tile, block and desired attenuation parameters
-  if (argc < 1) {
+  if (argc < 3) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify desired nco freq in MHz");
     return KATCP_RESULT_INVALID;
   }
-
-
-  nco = arg_double_katcp(d, 1);
+  
+  adc_mask = arg_unsigned_long_katcp(d, 1);
+  dac_mask = arg_unsigned_long_katcp(d, 2);
+  nco = arg_double_katcp(d, 3);
   log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set nco freq: %.3f MHz", nco);
   // TODO: validate values, I know the valid values are [-fs/2, fs/2] but irc
   // the driver will internally allow any value but should just have the effect
@@ -1215,18 +1215,25 @@ int rfdc_update_nco_mts_cmd(struct katcp_dispatch *d, int argc) {
   // use getter to populate mixer settings
   for (tile = 0; tile < NUM_TILES; tile++) {
     for (blk = 0; blk < NUM_BLKS; blk++) {
-      result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &adc_mixer[tile][blk]);
-      if (result != XRFDC_SUCCESS) {
-        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get adc %d %d mixer settings", tile, blk);
-        return KATCP_RESULT_FAIL;
-      }
-      if (tile == 0 & blk == 0) { // only updating DAC 00 for the moment
-        result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk, &dac_mixer[tile][blk]);
+
+      if ((adc_mask >> (tile*4+blk)) & 1) {
+        log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "getting ADC tile %d blk %d mixer settings", tile, blk);
+        result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &adc_mixer[tile][blk]);
         if (result != XRFDC_SUCCESS) {
-          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get dac %d %d mixer settings", tile, blk);
+          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get ADC %d %d mixer settings", tile, blk);
           return KATCP_RESULT_FAIL;
         }
       }
+      else {log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "skipping ADC tile %d blk %d", tile, blk);}
+      if ((dac_mask >> (tile*4+blk)) & 1) {
+        log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "getting DAC tile %d blk %d mixer settings", tile, blk);
+        result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk, &dac_mixer[tile][blk]);
+        if (result != XRFDC_SUCCESS) {
+          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get DAC %d %d mixer settings", tile, blk);
+          return KATCP_RESULT_FAIL;
+        }
+      }
+      else {log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "skipping DAC tile %d blk %d", tile, blk);}
     }
   }
 
@@ -1248,13 +1255,15 @@ int rfdc_update_nco_mts_cmd(struct katcp_dispatch *d, int argc) {
       adc_mixer[tile][blk].Freq = nco;
       dac_mixer[tile][blk].Freq = nco;
       // set new mixer settings
-      result_adc = XRFdc_SetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &adc_mixer[tile][blk]);
-      // Wait for successful return
-      if (result_adc!=XRFDC_SUCCESS) {
-        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set adc mixer tile %d blk %d settings",tile, blk);
-        return KATCP_RESULT_FAIL;
+      if ((adc_mask >> (tile*4+blk)) & 1) {
+        result_adc = XRFdc_SetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &adc_mixer[tile][blk]);
+        // Wait for successful return
+        if (result_adc!=XRFDC_SUCCESS) {
+          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set adc mixer tile %d blk %d settings",tile, blk);
+          return KATCP_RESULT_FAIL;
+        }
       }
-      if (tile == 0 & blk == 0) { // only updating DAC 00 for the moment
+      if ((dac_mask >> (tile*4+blk)) & 1) {
         result_dac = XRFdc_SetMixerSettings(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk, &dac_mixer[tile][blk]);
         if (result_dac!=XRFDC_SUCCESS) {
           log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set dac mixer tile %d blk %d settings",tile, blk);
