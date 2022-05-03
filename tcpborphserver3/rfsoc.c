@@ -264,21 +264,27 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   if (pll_type == 0) {
     result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMK_SDO_SS, clkconfig, prg_cnt, pkt_len);
   } else {
-    // lmk for tile 224/225
+    // lmx for tile 224/225
     result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS224_225, clkconfig, prg_cnt, pkt_len);
     if (result == XRFDC_FAILURE) {
-      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program first adc lmk pll");
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program first adc lmx pll");
       free(clkconfig);
       return KATCP_RESULT_FAIL;
     }
-    // lmk for tile 226/227
+    // lmx for tile 226/227
     result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS226_227, clkconfig, prg_cnt, pkt_len);
-  }
-
-  if (result == XRFDC_FAILURE) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program second adc lmk pll");
-    free(clkconfig);
-    return KATCP_RESULT_FAIL;
+    if (result == XRFDC_FAILURE) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program second adc lmx pll");
+      free(clkconfig);
+      return KATCP_RESULT_FAIL;
+    }
+    // lmx for tile 228/229
+    result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS228_229, clkconfig, prg_cnt, pkt_len);
+    if (result == XRFDC_FAILURE) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program dac lmx pll");
+      free(clkconfig);
+      return KATCP_RESULT_FAIL;
+    }
   }
 
   close_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
@@ -1262,11 +1268,23 @@ int rfdc_update_nco_mts_cmd(struct katcp_dispatch *d, int argc) {
           log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set adc mixer tile %d blk %d settings",tile, blk);
           return KATCP_RESULT_FAIL;
         }
+        result_adc = XRFdc_ResetNCOPhase(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk);
+        // Wait for successful return
+        if (result_adc!=XRFDC_SUCCESS) {
+          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to reset adc mixer tile %d blk %d nco phase",tile, blk);
+          return KATCP_RESULT_FAIL;
+        }
       }
       if ((dac_mask >> (tile*4+blk)) & 1) {
         result_dac = XRFdc_SetMixerSettings(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk, &dac_mixer[tile][blk]);
         if (result_dac!=XRFDC_SUCCESS) {
           log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set dac mixer tile %d blk %d settings",tile, blk);
+          return KATCP_RESULT_FAIL;
+        }
+        result_dac = XRFdc_ResetNCOPhase(rfdc->xrfdc, XRFDC_DAC_TILE, tile, blk);
+        // Wait for successful return
+        if (result_dac!=XRFDC_SUCCESS) {
+          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to reset dac mixer tile %d blk %d nco phase",tile, blk);
           return KATCP_RESULT_FAIL;
         }
       }
