@@ -1,7 +1,7 @@
 #ifndef SPIFPGA_USER_H_
 #define SPIFPGA_USER_H_
 
-#define DEVICE "/dev/spidev0.0"
+#define DEVICE "/dev/spidev1.0"
 #define MAX_SPEED 4000000
 #define DELAY 1
 #define BITS 8

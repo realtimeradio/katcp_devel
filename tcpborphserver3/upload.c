@@ -228,32 +228,17 @@ int subprocess_upload_tbs(struct katcl_line *l, void *data)
  
   gzclose(gfd);
   fprintf(stderr, "Closing gzipped file %s\n", pd->t_name);
-  if (!strcmp(pd->t_name, TBS_FPGA_CONFIG)) {
-    fprintf(stderr, "Trying to program FPGA\n");
-    close(pd->t_fd);
-    // PROGRAM THE FPGA HERE!!
-
-    fprintf(stderr, "setting up RPI io\n");
-    setup_io();
-
-    fprintf(stderr, "syncing jtag\n");
-    syncJTAGs();
-
-    fprintf(stderr, "creating buffer\n");
-    unsigned char *buffer;
-    buffer = (unsigned char *)malloc(FPGA_BIN_SIZE);
-
-    int fd = open(TBS_FPGA_CONFIG, O_RDONLY);
-    read(fd, buffer, FPGA_BIN_SIZE);
-    close(fd);
-
-    int rv = ProgramDevice(6, buffer, FPGA_BIN_SIZE);
-    free(buffer);
-    if (rv != 0){
-      fprintf(stderr, "Programming failed with return code %d\n", rv);
-      //log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "Programming Failed!");
-    }
-  }
+  close(pd->t_fd);
+  //if (!strcmp(pd->t_name, TBS_FPGA_CONFIG)) {
+  //  fprintf(stderr, "Trying to program FPGA\n");
+  //  close(pd->t_fd);
+  //  // PROGRAM THE FPGA HERE!!
+  //  int rv = 0;
+  //  if (rv != 0){
+  //    fprintf(stderr, "Programming failed with return code %d\n", rv);
+  //    //log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "Programming Failed!");
+  //  }
+  //}
 
   sync_message_katcl(l, KATCP_LEVEL_DEBUG, UPLOAD_LABEL, "received file data of %u bytes", count);
 

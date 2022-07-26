@@ -17,11 +17,11 @@
 #define TBS_LOGFILE        "/var/log/tcpborphserver3.log"
 #endif
 
-#define TBS_FPGA_CONFIG    "/dev/shm/fpga-config"
-#define TBS_FPGA_MEM       "/dev/spidev0.0"
+#define TBS_FPGA_CONFIG    "/tmp/fpga-config"
+#define TBS_FPGA_MEM       "/dev/spidev1.0"
 
 #define TBS_KCPFPG_PATH    "/bin/kcpfpg"
-#define TBS_RAMFILE_PATH   "/dev/shm/gateware"
+#define TBS_RAMFILE_PATH   "/tmp/gateware"
 
 #define TBS_FPGA_STATUS    "#fpga"
 #define TBS_KCPFPG_EXE     "kcpfpg"
