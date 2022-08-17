@@ -10,8 +10,6 @@
 #include "tcpborphserver3.h"
 #include "rfsoc.h"
 
-#include "alpaca_platform.h"
-#include "alpaca_i2c_utils.h"
 #include "alpaca_rfclks.h"
 
 int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
@@ -117,9 +115,9 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
    * rclk struct managing the rfpll's present
    */
 
+#if PLATFORM == ZCU216 // || PLATFORM == ZCU208
   // init i2c
   init_i2c_bus();
-#if PLATFORM == ZCU216 // || PLATFORM == ZCU208
   init_i2c_dev(I2C_DEV_CLK104);
   // TODO: 510 is when base platform fabric design is in the base tree, but
   // this will change if jasper fully adopts the device tree overlay separating
@@ -163,7 +161,9 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
 
   // close devices
   close_i2c_dev(I2C_DEV_CLK104);
+  close_i2c_bus();
 #elif PLATFORM == ZRF16
+  // init i2c
   init_i2c_dev(I2C_DEV_LMK_SPI_BRIDGE);
   init_i2c_dev(I2C_DEV_LMX_SPI_BRIDGE);
   init_i2c_dev(I2C_DEV_IOX);
@@ -228,7 +228,10 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   close_i2c_dev(I2C_DEV_LMK_SPI_BRIDGE);
   close_i2c_dev(I2C_DEV_LMX_SPI_BRIDGE);
   close_i2c_dev(I2C_DEV_IOX);
+  close_i2c_bus();
 #elif PLATFORM == ZCU111
+  // init i2c
+  init_i2c_bus();
   init_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
   init_i2c_dev(I2C_DEV_IOX);
 
@@ -264,26 +267,36 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   if (pll_type == 0) {
     result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMK_SDO_SS, clkconfig, prg_cnt, pkt_len);
   } else {
-    // lmk for tile 224/225
+    // lmx for adc tile 224/225
     result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS224_225, clkconfig, prg_cnt, pkt_len);
     if (result == XRFDC_FAILURE) {
-      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program first adc lmk pll");
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program adc tile 224/225 lmx pll");
       free(clkconfig);
       return KATCP_RESULT_FAIL;
     }
-    // lmk for tile 226/227
+    // lmx for adc tile 226/227
     result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS226_227, clkconfig, prg_cnt, pkt_len);
+    if (result == XRFDC_FAILURE) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program adc tile 226/227 lmx pll");
+      free(clkconfig);
+      return KATCP_RESULT_FAIL;
+    }
+    // lmx for dac tile 228/229
+    result = prog_pll(I2C_DEV_PLL_SPI_BRIDGE, LMX_SDO_SS228_229, clkconfig, prg_cnt, pkt_len);
   }
 
   if (result == XRFDC_FAILURE) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program second adc lmk pll");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program dac tile 228/229 lmx pll");
     free(clkconfig);
     return KATCP_RESULT_FAIL;
   }
 
   close_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
   close_i2c_dev(I2C_DEV_IOX);
+  close_i2c_bus();
 #elif PLATFORM == RFSoC2x2
+  // init i2c
+  init_i2c_bus();
   init_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
   init_i2c_dev(I2C_DEV_IOX);
 
@@ -333,8 +346,47 @@ int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc) {
   // close devices
   close_i2c_dev(I2C_DEV_PLL_SPI_BRIDGE);
   close_i2c_dev(I2C_DEV_IOX);
-#endif
   close_i2c_bus();
+#elif PLATFORM == RFSoC4x2
+  // init spi device
+  spi_dev_t spidev;
+  spidev.mode = SPI_MODE_0 | SPI_CS_HIGH;
+  spidev.bits = 8;
+  spidev.speed = 500000;
+  spidev.delay = 0;
+
+  if (pll_type == 0) {
+    // configure lmk
+    strcpy(spidev.device, LMK_SPIDEV);
+    init_spi_dev(&spidev);
+    result = prog_pll(&spidev, clkconfig, prg_cnt, pkt_len);
+    close_spi_dev(&spidev);
+  } else {
+    // rfsoc4x2 has one adc rfpll and one dac rfpll
+    strcpy(spidev.device, ADC_RFPLL_SPIDEV);
+    init_spi_dev(&spidev);
+    result = prog_pll(&spidev, clkconfig, prg_cnt, pkt_len);
+    close_spi_dev(&spidev);
+    if (result == XRFDC_FAILURE) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program pll");
+      free(clkconfig);
+      return KATCP_RESULT_FAIL;
+    }
+
+    // now reinit spi to program dac rfpll
+    strcpy(spidev.device, DAC_RFPLL_SPIDEV);
+    init_spi_dev(&spidev);
+    result = prog_pll(&spidev, clkconfig, prg_cnt, pkt_len);
+    close_spi_dev(&spidev);
+  }
+
+  if (result == XRFDC_FAILURE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "could not program pll");
+    free(clkconfig);
+    return KATCP_RESULT_FAIL;
+  }
+
+#endif
 
   // release memory from pll tcs config
   free(clkconfig);

@@ -20,7 +20,7 @@ CFLAGS += -ggdb
 #CFLAGS += -DINTERNAL_HWMON
 
 SERVER = tcpborphserver3
-SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c phy.c alpaca_i2c_utils.c alpaca_rfclks.c rfsoc.c
+SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c phy.c alpaca_i2c_utils.c alpaca_spi.c alpaca_rfclks.c rfsoc.c
 
 OBJ = $(patsubst %.c,%.o,$(SRC))
 all: $(SERVER)
