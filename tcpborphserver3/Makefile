@@ -17,7 +17,7 @@ CFLAGS += -DDEBUG
 
 RPI = `cat /proc/device-tree/model | awk '{print $$3}'`
 SERVER = tcpborphserver3
-SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c rpjtag_io.c rpjtag_stateMachine.c rpjtag_bit_reader.c spifpga_user.c
+SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c rpjtag_io.c rpjtag_stateMachine.c rpjtag_bit_reader.c spifpga_user.c gpio_smap.c
 
 OBJ = $(patsubst %.c,%.o,$(SRC))
 all: $(SERVER)

@@ -17,8 +17,24 @@
 #define TBS_LOGFILE        "/var/log/tcpborphserver3.log"
 #endif
 
+#define PLATFORM_ADZE
+//#define PLATFORM_RPI
+
 #define TBS_FPGA_CONFIG    "/tmp/fpga-config"
+#ifdef PLATFORM_RPI
+#define TBS_FPGA_MEM       "/dev/spidev1.0"
+#endif
+#ifdef PLATFORM_ADZE
 #define TBS_FPGA_MEM       "/dev/spidev0.0"
+#endif
+
+
+#ifdef PLATFORM_RPI
+#define USE_JTAG
+#endif
+#ifdef PLATFORM_ADZE
+#define USE_GPIO_SMAP
+#endif
 
 #define TBS_KCPFPG_PATH    "/bin/kcpfpg"
 #define TBS_RAMFILE_PATH   "/dev/shm/gateware"

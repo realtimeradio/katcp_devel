@@ -26,9 +26,14 @@
 #include "loadbof.h"
 #include "tg.h"
 
+#ifdef USE_JTAG
 #include "rpjtag_io.h"
 #include "rpjtag_stateMachine.h"
 #include "rpjtag_bit_reader.h"
+#endif
+#ifdef USE_GPIO_SMAP
+#include "gpio_smap.h"
+#endif
 
 #define MTU               1024*64
 
@@ -229,15 +234,38 @@ int subprocess_upload_tbs(struct katcl_line *l, void *data)
   gzclose(gfd);
   fprintf(stderr, "Closing gzipped file %s\n", pd->t_name);
   if (!strcmp(pd->t_name, TBS_FPGA_CONFIG)) {
+    int rv;
     fprintf(stderr, "Trying to program FPGA\n");
     close(pd->t_fd);
     // PROGRAM THE FPGA HERE!!
-
+#ifdef USE_JTAG
     fprintf(stderr, "setting up RPI io\n");
     setup_io();
 
     fprintf(stderr, "syncing jtag\n");
     syncJTAGs();
+#endif
+#ifdef USE_GPIO_SMAP
+    fprintf(stderr, "Initing GPIO memmap\n");
+    rv = init_mm();
+    if (rv != 0){
+      fprintf(stderr, "Failed to init memmap");
+      return -1;
+    }
+    fprintf(stderr, "Initing FPGA\n");
+    rv = init_fpga();
+    if (rv != 0){
+      fprintf(stderr, "Failed to init FPGA");
+      return -1;
+    }
+
+    fprintf(stderr, "activating SMAP\n");
+    rv = activate_smap();
+    if (rv != 0){
+      fprintf(stderr, "Failed to init SMAP");
+      return -1;
+    }
+#endif
 
     fprintf(stderr, "creating buffer\n");
     unsigned char *buffer;
@@ -247,12 +275,24 @@ int subprocess_upload_tbs(struct katcl_line *l, void *data)
     read(fd, buffer, FPGA_BIN_SIZE);
     close(fd);
 
-    int rv = ProgramDevice(6, buffer, FPGA_BIN_SIZE);
+    fprintf(stderr, "Programming\n");
+#ifdef USE_JTAG
+    rv = ProgramDevice(6, buffer, FPGA_BIN_SIZE);
+#endif
+#ifdef USE_GPIO_SMAP
+    rv = write_smap(buffer, FPGA_BIN_SIZE);
+#endif
+    fprintf(stderr, "Done Programming\n");
     free(buffer);
     if (rv != 0){
       fprintf(stderr, "Programming failed with return code %d\n", rv);
-      //log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "Programming Failed!");
     }
+#ifdef USE_GPIO_SMAP
+    rv = deinit_mm();
+    if (rv != 0){
+      fprintf(stderr, "Failed to unmap GPIO memory");
+    }
+#endif
   }
 
   sync_message_katcl(l, KATCP_LEVEL_DEBUG, UPLOAD_LABEL, "received file data of %u bytes", count);
