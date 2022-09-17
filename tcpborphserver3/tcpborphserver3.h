@@ -18,7 +18,7 @@
 #endif
 
 #define TBS_FPGA_CONFIG    "/tmp/fpga-config"
-#define TBS_FPGA_MEM       "/dev/spidev1.0"
+#define TBS_FPGA_MEM       "/dev/spidev0.0"
 
 #define TBS_KCPFPG_PATH    "/bin/kcpfpg"
 #define TBS_RAMFILE_PATH   "/tmp/gateware"
