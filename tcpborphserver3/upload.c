@@ -251,47 +251,48 @@ int subprocess_upload_tbs(struct katcl_line *l, void *data)
   /* Close file that we just finished writing to */
   close(pd->t_fd);
 
-  if(pd->t_program) {
-    fpga_man = fopen(FPGA_MANAGER_FLAG, "w");
-    if(fpga_man == NULL){
-      sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "unable to open fpga manager flags");
-      return -1;
-    }
-    fprintf(fpga_man, "0\n");
-    fclose(fpga_man);
+  sync_message_katcl(l, KATCP_LEVEL_INFO, NULL, "skipping program");
+  //if(pd->t_program) {
+  //  fpga_man = fopen(FPGA_MANAGER_FLAG, "w");
+  //  if(fpga_man == NULL){
+  //    sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "unable to open fpga manager flags");
+  //    return -1;
+  //  }
+  //  fprintf(fpga_man, "0\n");
+  //  fclose(fpga_man);
 
-    fpga_man = fopen(FPGA_MANAGER_FW, "w");
-    if(fpga_man == NULL){
-      sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "unable to open firmware file to write bitstream name");
-      return -1;
-    }
-    sync_message_katcl(l, KATCP_LEVEL_INFO, NULL, "Writing 'tcpborphserver.bin' to fpga_manager");
-    fprintf(fpga_man, "tcpborphserver.bin\n");
-    fclose(fpga_man);
+  //  fpga_man = fopen(FPGA_MANAGER_FW, "w");
+  //  if(fpga_man == NULL){
+  //    sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "unable to open firmware file to write bitstream name");
+  //    return -1;
+  //  }
+  //  sync_message_katcl(l, KATCP_LEVEL_INFO, NULL, "Writing 'tcpborphserver.bin' to fpga_manager");
+  //  fprintf(fpga_man, "tcpborphserver.bin\n");
+  //  fclose(fpga_man);
 
-    // Check that / wait until the programming was successful
-    fpga_state_file = fopen(FPGA_MANAGER_STATE, "r");
-    char fpga_state[64];
-    char fpga_state_ok[] = FPGA_STATE_OK;
-    char *fpga_state_rv;
-    if(fpga_state_file == NULL){
-      sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "unable to open fpga manager state file");
-      return -1;
-    }
-    fpga_state_rv = fgets(fpga_state, 64, fpga_state_file);
-    if (!fpga_state_rv) {
-      sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "FPGA state read failed");
-      return -1;
-    }
-    fpga_state[63] = '\0';
-    if (!strcmp(fpga_state, fpga_state_ok)){
-      sync_message_katcl(l, KATCP_LEVEL_INFO, NULL, "FPGA state register suggests programming was OK");
-    } else {
-      sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "FPGA state: %s\n", fpga_state);
-      return -1;
-    }
-    fclose(fpga_state_file);
-  }
+  //  // Check that / wait until the programming was successful
+  //  fpga_state_file = fopen(FPGA_MANAGER_STATE, "r");
+  //  char fpga_state[64];
+  //  char fpga_state_ok[] = FPGA_STATE_OK;
+  //  char *fpga_state_rv;
+  //  if(fpga_state_file == NULL){
+  //    sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "unable to open fpga manager state file");
+  //    return -1;
+  //  }
+  //  fpga_state_rv = fgets(fpga_state, 64, fpga_state_file);
+  //  if (!fpga_state_rv) {
+  //    sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "FPGA state read failed");
+  //    return -1;
+  //  }
+  //  fpga_state[63] = '\0';
+  //  if (!strcmp(fpga_state, fpga_state_ok)){
+  //    sync_message_katcl(l, KATCP_LEVEL_INFO, NULL, "FPGA state register suggests programming was OK");
+  //  } else {
+  //    sync_message_katcl(l, KATCP_LEVEL_ERROR, NULL, "FPGA state: %s\n", fpga_state);
+  //    return -1;
+  //  }
+  //  fclose(fpga_state_file);
+  //}
 #endif
 
   alarm(0);
