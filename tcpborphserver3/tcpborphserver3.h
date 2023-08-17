@@ -63,7 +63,7 @@ int status_fpga_tbs(struct katcp_dispatch *d, int status);
 int map_raw_tbs(struct katcp_dispatch *d);
 unsigned int infer_fpga_range(struct katcp_dispatch *d);
 
-#ifdef IS_RFSOC
+#if IS_RFSOC == 1
 #include "rfsoc.h"
 #endif
 

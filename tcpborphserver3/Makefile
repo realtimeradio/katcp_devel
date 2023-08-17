@@ -2,17 +2,18 @@ KATCP ?= ../katcp
 RFDC ?= ../rfdc
 RFSOC_PLATFORM ?=
 SYSROOT ?= ../sysroot
+IS_RFSOC ?= 0
 
 include ../Makefile.inc
 
 INC = -I$(KATCP)
-ifdef IS_RFSOC
+ifeq (IS_RFSOC, 1)
 INC += -I$(RFDC)
 endif
 
 #LIB = -L$(KATCP) -lkatcp -ldl -lz -lmagic
 LIB = -L$(SYSROOT)/lib -L$(SYSROOT)/usr/lib -L$(KATCP) -lkatcp -ldl -lz
-ifdef IS_RFSOC
+ifeq (IS_RFSOC, 1)
 LIB += -L$(RFDC) -lrfdc -lmetal
 endif
 
@@ -28,7 +29,7 @@ CFLAGS += -ggdb
 
 SERVER = tcpborphserver3
 SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c phy.c
-ifdef IS_RFSOC
+ifeq (IS_RFSOC, 1)
 SRC += alpaca_i2c_utils.c alpaca_spi.c alpaca_rfclks.c rfsoc.c
 endif
 

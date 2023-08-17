@@ -25,7 +25,7 @@
 #include "tcpborphserver3.h"
 #include "loadbof.h"
 #include "tg.h"
-#ifdef IS_RFSOC
+#if IS_RFSOC == 1
 #include "rfsoc.h" // will implement callbacks in rfsoc.c but call them here
 /* will copy over the tmp upload file type stuff and then use the "call"
  * function pointer mechanism to know which function to use in the callback
@@ -1366,7 +1366,7 @@ int subprocess_upload_rfclk_tbs(struct katcl_line *l, void *data) {
 
 }
 
-#ifdef IS_RFSOC
+#if IS_RFSOC == 1
 int rfdc_upload_rfclk_cmd(struct katcp_dispatch *d, int argc) {
   struct katcp_dispatch *dl;
   struct katcp_job *j;

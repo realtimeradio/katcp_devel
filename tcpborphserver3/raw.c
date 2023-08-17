@@ -26,7 +26,7 @@
 
 #include "phy.h"
 
-#ifdef IS_RFSOC
+#if IS_RFSOC == 1
 #include "rfsoc.h"
 #endif
 
@@ -2994,7 +2994,7 @@ void destroy_raw_tbs(struct katcp_dispatch *d, struct tbs_raw *tr)
     tr->r_lkey = NULL;
   }
 
-#ifdef IS_RFSOC
+#if IS_RFSOC == 1
   // TODO: destroyed (and created) within the context of "raw" mode, but would
   // move to exit logic when creating rfdc specific mode
   if (tr->r_rfdc) {
@@ -3101,7 +3101,7 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
 
   tr->r_lkey = NULL;
 
-#ifdef IS_RFSOC
+#if IS_RFSOC == 1
   // TODO: created (and destroyed within the context of "raw" but would move
   // this to mode specific activation logic with creation of an rfdc mode
   tr->r_rfdc = create_tbs_rfdc();
@@ -3218,7 +3218,7 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_katcp(d, "?capture-stop", "stops a data capture", &capture_stop_cmd);
 
   /* RFSoC devel */
-#ifdef IS_RFSOC
+#if IS_RFSOC == 1
   //result += register_flag_mode_katcp(d, "?rfdc-upload", "upload different configuration products to initialize rfdc (?rfdc-upload dto|lmk|lmx [port [length [timeout]]]", &rfdc_upload, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-upload-rfclk", "upload tics txt register file for programming rf plls (?rfdc-upload-rfclk [tcs-file-name [port [length [timeout]]]])", &rfdc_upload_rfclk_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-progpll", "program onboard plls (?rfdc-progpll lmk|lmx [tcs-file-name])", &rfdc_program_pll_cmd, 0, TBS_MODE_RAW);
