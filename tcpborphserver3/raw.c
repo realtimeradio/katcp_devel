@@ -941,16 +941,23 @@ int word_write_cmd(struct katcp_dispatch *d, int argc)
 #endif
 
     log_message_katcp(d, KATCP_LEVEL_TRACE, NULL, "writing 0x%x to position 0x%x", update, j);
-
-    if(((unsigned int)tr->r_map + j) > (unsigned int)tr->r_map + tr->r_map_size){
-      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL,
-        "register %s is outside mapped range 0x%08x", name,
-         (unsigned int)tr->r_map + j);
+    if(((uint32_t)tr->r_map + j) > (uint32_t)tr->r_map + tr->r_map_size){
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "register %s is outside mapped range 0x%08x", name, (uint32_t)tr->r_map + j);
       return KATCP_RESULT_FAIL;
     }
     *((uint32_t *)(tr->r_map + j)) = update;
 
-    prev = value << (32 - shift);
+    if (shift > 0) {
+      prev = value << (32 - shift);
+    } else {
+      /* a left-shift by 32 (when ptr_offset==0) is undefined since `prev` is a `uint32_t`. What actually
+      * happens is a `left-shift-overflow` and the effect is left up to the processor instruction. In many
+      * cases this results in no shift happening at all (i.e., prev = value << 0)
+      *
+      * it actually isn't clear why bother with sub 32-bit writes in the `write_word` command
+      */
+      prev = 0;
+    }
     j += 4;
   }
 
@@ -1102,7 +1109,8 @@ int write_cmd(struct katcp_dispatch *d, int argc)
 
   word_normalise_bb_katcl(&off);
 
-  log_message_katcp(d, KATCP_LEVEL_TRACE, NULL, "writing to %s@0x%lx:%d: start position 0x%lx:%d, payload length 0x%lx:%d, register size 0x%lx:%d", name, te->e_pos_base, te->e_pos_offset, off.b_byte, off.b_bit, len.b_byte, len.b_bit, te->e_len_base, te->e_len_offset);
+  log_message_katcp(d, KATCP_LEVEL_TRACE, NULL, "writing to %s@0x%lx:%d: start position 0x%lx:%d, payload length 0x%lx:%d, register size 0x%lx:%d",
+    name, te->e_pos_base, te->e_pos_offset, off.b_byte, off.b_bit, len.b_byte, len.b_bit, te->e_len_base, te->e_len_offset);
 
   ptr_base   = off.b_byte;
   ptr_offset = off.b_bit;
@@ -1135,7 +1143,16 @@ int write_cmd(struct katcp_dispatch *d, int argc)
 
     *((uint32_t *)(tr->r_map + ptr_base)) = update;
 
-    prev = value << (32 - ptr_offset);
+    if (ptr_offset > 0) {
+      prev = value << (32 - ptr_offset);
+    } else {
+      /* a left-shift by 32 (when ptr_offset==0) is undefined since `prev` is a `uint32_t`. What actually
+      * happens is a `left-shift-overflow` and the effect is left up to the processor instruction. In many
+      * cases this results in no shift happening at all (i.e., prev = value << 0)
+      */
+      prev = 0;
+    }
+
     ptr_base += 4;
   }
 
@@ -1183,10 +1200,8 @@ int write_cmd(struct katcp_dispatch *d, int argc)
     /* now write a partial destination, so need to load in some bits */
     if(remaining_bits > 0){
 
-      if(((unsigned int)tr->r_map + ptr_base) > (unsigned int)tr->r_map + tr->r_map_size){
-        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL,
-            "register %s is outside mapped range 0x%08x", name,
-             (unsigned int)tr->r_map + ptr_base);
+      if(((uint32_t)tr->r_map + ptr_base) > (uint32_t)tr->r_map + tr->r_map_size){
+        log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "register %s is outside mapped range 0x%08x", name, (uint32_t)tr->r_map + ptr_base);
         return KATCP_RESULT_FAIL;
       }
 
@@ -3208,12 +3223,18 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-upload-rfclk", "upload tics txt register file for programming rf plls (?rfdc-upload-rfclk [tcs-file-name [port [length [timeout]]]])", &rfdc_upload_rfclk_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-progpll", "program onboard plls (?rfdc-progpll lmk|lmx [tcs-file-name])", &rfdc_program_pll_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-init", "initialize rfdc driver (?rfdc-init)", &rfdc_init_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-driver-ver", "get rfdc library version (?rfdc-driver-ver)", &rfdc_driver_ver_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-get-master-tile", "get master tile for rfdc adcs (?rfdc-get-master-tile)", &rfdc_get_master_tile_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-status", "report tile status, state, pll info (?rfdc-status)", &rfdc_status_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-dsa", "get digital step attenuator values (?rfdc-get-dsa)", &rfdc_get_dsa_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-set-dsa", "set digital step attenuator values (?rfdc-set-dsa tile-num block-num atten-db)", &rfdc_set_dsa_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi tile synchronization (?rfdc-run-mts)", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-update-nco", "update nco frequency (?rfdc-update-nco)", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
-  // JH: I suppose DTO isn't strictly RFSOC, but it lives in rfsoc.c, so....
+  result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi-tile synchronization (?rfdc-run-mts tile-mask)", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-report-mts-latency", "report latency from mts (?rfdc-report-mts-latency)", &rfdc_report_mts_latency_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-mts-report", "provide detailed mts marker report (?rfdc-mts-report)", &rfdc_mts_report_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-report-mixer", "report adc or dac mixer settings for tile and blk (?rfdc-report-nco tile-idx blk-idx [adc|dac]", &rfdc_report_mixer_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-update-nco", "update adc or dac mixer nco frequency for tile and blk (?rfdc-update-nco tile-idx blk-idx nco-ghz [adc|dac])", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-update-nco-mts", "update adc or dac mixer nco frequency for all tiles/blks (?rfdc-update-nco nco-ghz)", &rfdc_update_nco_mts_cmd, 0, TBS_MODE_RAW);
+  // JH: I suppose DTO isn't strictly RFSOC, but it lives in rfsoc.c, so put it here in the ifdef...
   result += register_flag_mode_katcp(d, "?dto", "manage device tree overlay (?dto apply|remove)", &tbs_dto_cmd, 0, TBS_MODE_RAW);
 #endif
 
