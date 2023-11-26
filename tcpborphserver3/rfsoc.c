@@ -782,20 +782,37 @@ int rfdc_status_cmd(struct katcp_dispatch *d, int argc) {
   XRFdc_GetIPStatus(rfdc->xrfdc, &ip_status);
 
   // TODO: will need to be smart between dual-/quad-tile
+  unsigned int enabled;
   for (int i = 0; i < NUM_TILES; i++) {
-    prepend_inform_katcp(d);
-    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ADC%d: Enabled %d, State: %d PLL: %d", i,
-               ip_status.ADCTileStatus[i].IsEnabled,
-               ip_status.ADCTileStatus[i].TileState,
-               ip_status.ADCTileStatus[i].PLLState);
+    enabled = ip_status.ADCTileStatus[i].IsEnabled;
+
+    // TODO: should just append_args w/ FLAG_STRING, without LAST
+    if (enabled==1) {
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ADC%d: Enabled %d, State %d, PLL %d", i,
+                 ip_status.ADCTileStatus[i].IsEnabled,
+                 ip_status.ADCTileStatus[i].TileState,
+                 ip_status.ADCTileStatus[i].PLLState);
+    } else {
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ADC%d: Enabled 0", i);
+    }
   }
 
+  // TODO: should just append_args w/ FLAG_STRING, without LAST
   for (int i=0; i<NUM_TILES; i++) {
-    prepend_inform_katcp(d);
-    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "DAC%d: Enabled %d, State: %d PLL: %d", i,
-               ip_status.DACTileStatus[i].IsEnabled,
-               ip_status.DACTileStatus[i].TileState,
-               ip_status.DACTileStatus[i].PLLState);
+    enabled = ip_status.DACTileStatus[i].IsEnabled;
+
+    if (enabled==1) {
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "DAC%d: Enabled %d, State %d, PLL %d", i,
+                 ip_status.DACTileStatus[i].IsEnabled,
+                 ip_status.DACTileStatus[i].TileState,
+                 ip_status.DACTileStatus[i].PLLState);
+    } else {
+      prepend_inform_katcp(d);
+      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "DAC%d: Enabled 0", i);
+    }
   }
 
   return KATCP_RESULT_OK;
