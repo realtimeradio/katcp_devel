@@ -3226,6 +3226,10 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-mts-report", "provide detailed mts marker report (?rfdc-mts-report)", &rfdc_mts_report_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-report-mixer", "report adc or dac mixer settings for tile and blk (?rfdc-report-nco tile-idx blk-idx [adc|dac]", &rfdc_report_mixer_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-update-nco", "update adc or dac mixer nco frequency for tile and blk (?rfdc-update-nco) (?rfdc-update-nco tile-idx blk-idx nco-ghz [adc|dac])", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
+  // TODO: meaningful help-string
+  result += register_flag_mode_katcp(d, "?rfdc-get-output-current", "(?rfdc-get-output-current dac-tile-idx dac-blk-idx)", &rfdc_get_output_curr_cmd, 0, TBS_MODE_RAW);
+  // TODO: meaningful help-string
+  result += register_flag_mode_katcp(d, "?rfdc-set-vop", "(?rfdc-set-vop dac-tile-idx dac-blk-idx output-current-uA)", &rfdc_set_vop_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?dto", "manage device tree overlay (?dto apply|remove)", &tbs_dto_cmd, 0, TBS_MODE_RAW);
 
 

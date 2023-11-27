@@ -55,6 +55,8 @@ int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_output_curr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_vop_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc);
 int tbs_dto_cmd(struct katcp_dispatch *d, int argc);
 

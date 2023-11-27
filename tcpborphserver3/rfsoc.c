@@ -1392,6 +1392,119 @@ int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc) {
   return KATCP_RESULT_OK;
 }
 
+
+// current values in μA
+// ES1 6425 to 32000, rounded to nearest increment
+// Production silicon 2250 to 40500, rounded to nearest increment
+int rfdc_set_vop_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  unsigned int microamp_current;
+  unsigned int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if (tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse target dac tile and block
+  if (argc < 4) {
+    // TODO: update help string for number of tiles for the device
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify dac tile idx (0-3), dac block idx, and current in uA");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
+  if (tile > NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
+  if (blk > NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  microamp_current = arg_unsigned_long_katcp(d, 3);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set dac vop: %d uA", microamp_current);
+  // TODO: validate values; ES1 6425 to 32000 uA, rounded to nearest increment
+  // Production silicon 2250 to 40500 uA, rounded to nearest increment
+
+
+  result = XRFdc_SetDACVOP(rfdc->xrfdc, tile, blk, microamp_current);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set output current");
+    return KATCP_RESULT_FAIL;
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_output_curr_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  unsigned int *outputcurrent = NULL;
+  unsigned int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if (tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse target dac tile and block
+  if (argc < 3) {
+    // TODO: update help string for number of tiles for the device
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify dac tile idx (0-3) and dac block idx");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
+  if (tile > NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
+  if (blk > NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  result = XRFdc_GetOutputCurr(rfdc->xrfdc, tile, blk, outputcurrent);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get output current");
+    return KATCP_RESULT_FAIL;
+  }
+
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%d", *outputcurrent);
+
+  return KATCP_RESULT_OK;
+}
+
+/************************************************************************************************/
+
 int rfdc_driver_ver_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   float driver_ver;
