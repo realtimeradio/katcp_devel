@@ -48,6 +48,7 @@ int rfdc_driver_ver_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_master_tile_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_init_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_status_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_block_status_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_set_dsa_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc);

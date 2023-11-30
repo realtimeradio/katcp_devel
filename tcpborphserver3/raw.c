@@ -3219,17 +3219,16 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-driver-ver", "get rfdc library version (?rfdc-driver-ver)", &rfdc_driver_ver_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-master-tile", "get master tile for rfdc adcs (?rfdc-get-master-tile)", &rfdc_get_master_tile_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-status", "report tile status, state, pll info (?rfdc-status)", &rfdc_status_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-get-dsa", "get digital step attenuator values (?rfdc-get-dsa)", &rfdc_get_dsa_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-block-status", "get converter tile block status (?rfdc-block-status tile-idx block-idx adc|dac)", &rfdc_get_block_status_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-get-dsa", "get digital step attenuator values (?rfdc-get-dsa adc-tile-idx adc-blk-idx)", &rfdc_get_dsa_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-set-dsa", "set digital step attenuator values (?rfdc-set-dsa tile-num block-num atten-db)", &rfdc_set_dsa_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi-tile synchronization (?rfdc-run-mts tile-mask)", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-report-mts-latency", "report latency from mts (?rfdc-report-mts-latency)", &rfdc_report_mts_latency_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-mts-report", "provide detailed mts marker report (?rfdc-mts-report)", &rfdc_mts_report_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-report-mixer", "report adc or dac mixer settings for tile and blk (?rfdc-report-nco tile-idx blk-idx [adc|dac]", &rfdc_report_mixer_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-update-nco", "update adc or dac mixer nco frequency for tile and blk (?rfdc-update-nco) (?rfdc-update-nco tile-idx blk-idx nco-ghz [adc|dac])", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
-  // TODO: meaningful help-string
-  result += register_flag_mode_katcp(d, "?rfdc-get-output-current", "(?rfdc-get-output-current dac-tile-idx dac-blk-idx)", &rfdc_get_output_curr_cmd, 0, TBS_MODE_RAW);
-  // TODO: meaningful help-string
-  result += register_flag_mode_katcp(d, "?rfdc-set-vop", "(?rfdc-set-vop dac-tile-idx dac-blk-idx output-current-uA)", &rfdc_set_vop_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-get-output-current", "get output current in micro amp (?rfdc-get-output-current dac-tile-idx dac-blk-idx)", &rfdc_get_output_curr_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-vop", "set output current in micro amp (?rfdc-set-vop dac-tile-idx dac-blk-idx output-current-uA)", &rfdc_set_vop_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?dto", "manage device tree overlay (?dto apply|remove)", &tbs_dto_cmd, 0, TBS_MODE_RAW);
 
 
