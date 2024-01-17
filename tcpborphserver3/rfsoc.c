@@ -872,7 +872,7 @@ int rfdc_get_block_status_cmd(struct katcp_dispatch *d, int argc) {
   }
   log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "getting block status for %s tile:%d blk:%d", type, tile, blk);
 
-  if (!XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk)) {
+  if (!XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
     prepend_inform_katcp(d);
     append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%s: tile %d, blk %d, disabled", type, tile, blk);
   } else {
@@ -1314,6 +1314,129 @@ int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
 
 /************************************************************************************************/
 
+int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  XRFdc_DSA_Settings dsa;
+  int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // check that DSA is supported
+  if (rfdc->xrfdc->RFdc_Config.IPType < XRFDC_GEN3) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "DSA only supported on Gen 3 devices");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse target adc tile and block
+  if (argc < 3) {
+    // TODO: update help string for number of tiles for the device
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3) and adc block idx (0-3)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get dsa for converter
+  result = XRFdc_GetDSA(rfdc->xrfdc, tile, blk, &dsa);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get dsa");
+    return KATCP_RESULT_FAIL;
+  }
+  // format and send status
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "dsa %1.f", dsa.Attenuation);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_dsa_all_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  XRFdc_DSA_Settings dsa;
+  int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // check that DSA is supported
+  if (rfdc->xrfdc->RFdc_Config.IPType < XRFDC_GEN3) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "DSA only supported on Gen 3 devices");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // get dsa for all converters
+  // TODO: note that in this way the dsa info is sent back appended as multiple
+  // args in the same inform rather than multiple informs in a single reply.
+  // This was part of testing what is available on th tbs side as a way for a
+  // client (casperfpga) to parse work with response.
+  prepend_inform_katcp(d);
+  for (int tile = 0; tile < NUM_TILES; tile++) {
+    for (int blk = 0; blk < NUM_BLKS; blk++) {
+      if (XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+        result = XRFdc_GetDSA(rfdc->xrfdc, tile, blk, &dsa);
+        if (result != XRFDC_SUCCESS) {
+          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get dsa");
+          return KATCP_RESULT_FAIL;
+        }
+        //prepend_inform_katcp(d);
+        //append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "adc: tile %u, blk %u, dsa %1.f", tile, blk, dsa.Attenuation);
+        //unsigned int katcp_flags = (tile==NUM_TILES-1 && blk==NUM_BLKS-1) ? KATCP_FLAG_STRING|KATCP_FLAG_LAST : KATCP_FLAG_STRING;
+        append_args_katcp(d, KATCP_FLAG_STRING, "adc: tile %u, blk %u, dsa %1.f", tile, blk, dsa.Attenuation);
+      } else {
+        //prepend_inform_katcp(d);
+        //append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "adc: tile %u, blk %u, (disabled)", tile, blk);
+        //unsigned int katcp_flags = (tile==NUM_TILES-1 && blk==NUM_BLKS-1) ? KATCP_FLAG_STRING|KATCP_FLAG_LAST : KATCP_FLAG_STRING;
+        append_args_katcp(d, KATCP_FLAG_STRING, "adc: tile %u, blk %u, (disabled)", tile, blk);
+      }
+    }
+  }
+  append_end_katcp(d);
+
+  return KATCP_RESULT_OK;
+}
+
 /*
  * (?rfdc-set-dsa adc-tile adc-blk dsa-in-dB)
  *
@@ -1412,12 +1535,13 @@ int rfdc_set_dsa_cmd(struct katcp_dispatch *d, int argc) {
 
 /************************************************************************************************/
 
-int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc) {
+int rfdc_get_fabclkfreq_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
-  unsigned int tile, blk;
-  XRFdc_DSA_Settings dsa;
-  int result;
+  unsigned int tile;
+  char* type;
+  int converter_type;
+  double pl_clk_freq;
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
   if(tr == NULL) {
@@ -1432,10 +1556,956 @@ int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // check that DSA is supported
-  if (rfdc->xrfdc->RFdc_Config.IPType < XRFDC_GEN3) {
-    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "DSA only supported on Gen 3 devices");
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3) and converter type (adc|dac)");
     return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get converter tile pl clk rate, format and send info
+  pl_clk_freq = XRFdc_GetFabClkFreq(rfdc->xrfdc, converter_type, tile);
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%g", pl_clk_freq);
+
+  return KATCP_RESULT_OK;
+}
+
+// 0 real, 1 complex
+int rfdc_get_datatype_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  char* type;
+  int converter_type;
+  unsigned int pl_datatype;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), blk idx (0-3), and converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get converter tile data type, format and send info
+  pl_datatype = XRFdc_GetDataType(rfdc->xrfdc, converter_type, tile, blk);
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%u", pl_datatype);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_datawidth_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  char* type;
+  int converter_type;
+  unsigned int pl_datawidth;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), blk idx (0-3), and converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get converter tile data type, format and send info
+  pl_datawidth = XRFdc_GetDataWidth(rfdc->xrfdc, converter_type, tile, blk);
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%u", pl_datawidth);
+
+  return KATCP_RESULT_OK;
+}
+
+// XRFDC_ODD_NYQUIST_ZONE 0x1U
+// XRFDC_EVEN_NYQUIST_ZONE 0x2U
+int rfdc_get_nyquist_zone_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  unsigned int converter_type;
+  unsigned int nyquist_zone;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get converter nyquist zone value
+  result = XRFdc_GetNyquistZone(rfdc->xrfdc, converter_type, tile, blk, &nyquist_zone);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get nyquist zone");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // format and send nyquist zone info
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "NyquistZone %u", nyquist_zone);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_nyquist_zone_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  unsigned int converter_type;
+  unsigned int nyquist_zone;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 5) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), nyquist zone (1|2)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // parse nyquist zone value
+  nyquist_zone = arg_unsigned_long_katcp(d, 4);
+  if (nyquist_zone != XRFDC_ODD_NYQUIST_ZONE && nyquist_zone != XRFDC_EVEN_NYQUIST_ZONE) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid nyquist zone setting");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // set nyquist zone for converter
+  result = XRFdc_SetNyquistZone(rfdc->xrfdc, converter_type, tile, blk, nyquist_zone);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set nyquist zone");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // readback and send nyquist zone info
+  result = XRFdc_GetNyquistZone(rfdc->xrfdc, converter_type, tile, blk, &nyquist_zone);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get nyquist zone");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "NyquistZone %u", nyquist_zone);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_coarse_delay_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  unsigned int converter_type;
+  XRFdc_CoarseDelay_Settings coarse_delay;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get coarse delay for converters
+  result = XRFdc_GetCoarseDelaySettings(rfdc->xrfdc, converter_type, tile, blk, &coarse_delay);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get coarse delay settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // format and send nyquist zone info
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "CoarseDelay %u, EventSource %u",
+    coarse_delay.CoarseDelay, coarse_delay.EventSource);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_coarse_delay_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  unsigned int converter_type;
+  XRFdc_CoarseDelay_Settings coarse_delay;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 6) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), coarse delay, update source");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // parse user coarse delay settings for converters
+  coarse_delay.CoarseDelay = arg_unsigned_long_katcp(d, 4);
+  coarse_delay.EventSource = arg_unsigned_long_katcp(d, 5);
+  result = XRFdc_SetCoarseDelaySettings(rfdc->xrfdc, converter_type, tile, blk, &coarse_delay);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set coarse delay settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // readback delay settings, format and send info
+  result = XRFdc_GetCoarseDelaySettings(rfdc->xrfdc, converter_type, tile, blk, &coarse_delay);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to readback coarse delay settings");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "CoarseDelay %u, EventSource %u",
+    coarse_delay.CoarseDelay, coarse_delay.EventSource);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_qmc_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  unsigned int converter_type;
+  XRFdc_QMC_Settings qmc;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get qmc settings for the converter
+  result = XRFdc_GetQMCSettings(rfdc->xrfdc, converter_type, tile, blk, &qmc);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get coarse delay settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // format and send nyquist zone info
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "EnablePhase %u, EnableGain %u, "
+  "GainCorrectionFactor %g, PhaseCorrectionFactor %g, OffsetCorrectionFactor %d, EventSource %u",
+  qmc.EnablePhase, qmc.EnableGain, qmc.GainCorrectionFactor, qmc.PhaseCorrectionFactor,
+  qmc.OffsetCorrectionFactor, qmc.EventSource);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_qmc_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  unsigned int converter_type;
+  XRFdc_QMC_Settings qmc;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 10) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), qmc parameters");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // parse user qmc settings
+  qmc.EnablePhase = arg_unsigned_long_katcp(d, 4);
+  qmc.EnableGain = arg_unsigned_long_katcp(d, 5);
+  qmc.GainCorrectionFactor = arg_double_katcp(d, 6);
+  qmc.PhaseCorrectionFactor = arg_double_katcp(d, 7);
+  qmc.OffsetCorrectionFactor = arg_unsigned_long_katcp(d, 8);
+  qmc.EventSource = arg_unsigned_long_katcp(d, 9);
+
+  // set qmc settings for the converter
+  result = XRFdc_SetQMCSettings(rfdc->xrfdc, converter_type, tile, blk, &qmc);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get coarse delay settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  result = XRFdc_GetQMCSettings(rfdc->xrfdc, converter_type, tile, blk, &qmc);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to readback qmc settings");
+    return KATCP_RESULT_FAIL;
+  }
+  // readback, format and send qmc settings
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "EnablePhase %u, EnableGain %u, "
+  "GainCorrectionFactor %g, PhaseCorrectionFactor %g, OffsetCorrectionFactor %d, EventSource %u",
+  qmc.EnablePhase, qmc.EnableGain, qmc.GainCorrectionFactor, qmc.PhaseCorrectionFactor,
+  qmc.OffsetCorrectionFactor, qmc.EventSource);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_pll_config_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  char* type;
+  unsigned int converter_type;
+  unsigned int tile;
+  XRFdc_PLL_Settings pll;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse converter tile, block, and parameters
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if converter tile available
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get PLL config, format and send info
+  memset(&pll, 0, sizeof(pll));
+  result = XRFdc_GetPLLConfig(rfdc->xrfdc, converter_type, tile, &pll);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get pll configuration info");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "Enabled %u, RefClkFreq %g, SampleRate %g, "
+  "RefClkDivider %u, FeedbackDivider %u, OutputDivider %u",
+  pll.RefClkFreq, pll.SampleRate, pll.RefClkDivider, pll.FeedbackDivider, pll.OutputDivider);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_dynamic_pll_config_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  char* type;
+  unsigned int converter_type;
+  unsigned int tile;
+  unsigned char clk_source;
+  double min_sample_rate, max_sample_rate;
+  double refclkfreq, sampling_rate;
+  //XRFdc_PLL_Settings pll;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse converter tile, block, and parameters
+  if (argc < 6) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), converter type (adc|dac), clk source, ref freq., sampling freq.");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if converter tile available
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // parse clk source, reference and sampling freq.
+  clk_source = arg_unsigned_long_katcp(d, 3);
+  if (clk_source != XRFDC_EXTERNAL_CLK && clk_source != XRFDC_INTERNAL_PLL_CLK) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid converter clock source setting");
+    return KATCP_RESULT_FAIL;
+  }
+
+  refclkfreq = arg_double_katcp(d, 4);
+  if (clk_source==XRFDC_INTERNAL_PLL_CLK) {
+    if (refclkfreq<XRFDC_REFFREQ_MIN || refclkfreq>XRFDC_REFFREQ_MAX) {
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "requested pll rate out of bounds (%u-%u) MHz", XRFDC_REFFREQ_MIN, XRFDC_REFFREQ_MAX);
+      return KATCP_RESULT_FAIL;
+    }
+  }
+
+  sampling_rate = arg_double_katcp(d, 5);
+  XRFdc_GetMinSampleRate(rfdc->xrfdc, converter_type, tile, &min_sample_rate);
+  XRFdc_GetMaxSampleRate(rfdc->xrfdc, converter_type, tile, &max_sample_rate);
+  if (sampling_rate < min_sample_rate || sampling_rate > max_sample_rate) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "requested sample rate out of bounds (%g-%g) MHz", min_sample_rate, max_sample_rate);
+    return KATCP_RESULT_FAIL;
+  }
+
+  // dynamically configure PLL settings
+  result = XRFdc_DynamicPLLConfig(rfdc->xrfdc, converter_type, tile, clk_source, refclkfreq, sampling_rate);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set nyquist zone");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // TODO: readback PLL config, format and send info
+  // would need to use GetClockSource to readback change to clock source
+  //memset(&pll, 0, sizeof(pll));
+  //result = XRFdc_GetPLLConfig(rfdc->xrfdc, converter_type, tile, blk, &pll);
+  //if (result != XRFDC_SUCCESS)
+  //  log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to readback pll configuration info");
+  //  return KATCP_RESULT_FAIL;
+  //}
+  //prepend_inform_katcp(d);
+  //append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "RefClkFreq %g, SampleRate %g", pll.RefClkFreq, pll.SampleRate);
+
+  return KATCP_RESULT_OK;
+}
+
+// XRFDC_PLL_UNLOCKED 0x1U
+// XRFDC_PLL_LOCKED   0x2U
+int rfdc_pll_lock_status_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  char* type;
+  unsigned int converter_type;
+  unsigned int tile;
+  unsigned int lock_status;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse converter tile, block, and parameters
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if converter tile available
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get pll lock status, format and send info
+  result = XRFdc_GetPLLLockStatus(rfdc->xrfdc, converter_type, tile, &lock_status);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get pll lock status");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "LockStatus %u", lock_status);
+
+  return KATCP_RESULT_OK;
+}
+
+// XRFDC_EXTERNAL_CLK     0x0U
+// XRFDC_INTERNAL_PLL_CLK 0x1U
+int rfdc_get_clk_src_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  char* type;
+  unsigned int converter_type;
+  unsigned int tile;
+  unsigned int clk_src;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse converter tile, block, and parameters
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if converter tile available
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get clock source, format and send info
+  result = XRFdc_GetClockSource(rfdc->xrfdc, converter_type, tile, &clk_src);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get clock source info");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "ClockSource %u", clk_src);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_cal_freeze_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  XRFdc_Cal_Freeze_Settings cal_freeze;
+  int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // todo: rfdc driver has a built-in `isready` to indicate driver
+  // initialization. should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
   }
 
   // parse target adc tile and block
@@ -1466,25 +2536,32 @@ int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OK;
   }
 
-  // get dsa for converter
-  result = XRFdc_GetDSA(rfdc->xrfdc, tile, blk, &dsa);
+  // get cal freeze for converter
+  result = XRFdc_GetCalFreeze(rfdc->xrfdc, tile, blk, &cal_freeze);
   if (result != XRFDC_SUCCESS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get dsa");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get cal freeze info");
     return KATCP_RESULT_FAIL;
   }
   // format and send status
   prepend_inform_katcp(d);
-  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "dsa %1.f", dsa.Attenuation);
-
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "CalFrozen %u, DisableFreezePin %u, FreezeCalibration %u",
+    cal_freeze.CalFrozen, cal_freeze.DisableFreezePin, cal_freeze.FreezeCalibration);
   return KATCP_RESULT_OK;
 }
 
-
-int rfdc_get_dsa_all_cmd(struct katcp_dispatch *d, int argc) {
+/*
+ * (?rfdc-set-cal-freeze adc-tile adc-blk freeze)
+ *  XRFDC_CAL_UNFREEZE_CALIB 0U
+ *  XRFDC_CAL_FREEZE_CALIB   1U
+ */
+int rfdc_set_cal_freeze_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
-  XRFdc_DSA_Settings dsa;
   int result;
+  unsigned int disable_freeze_pin = 0;
+  unsigned int freeze_calibration;
+  unsigned int tile, blk;
+  XRFdc_Cal_Freeze_Settings cal_freeze;
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
   if(tr == NULL) {
@@ -1499,136 +2576,601 @@ int rfdc_get_dsa_all_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // check that DSA is supported
-  if (rfdc->xrfdc->RFdc_Config.IPType < XRFDC_GEN3) {
-    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "DSA only supported on Gen 3 devices");
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and cal freeze setting");
     return KATCP_RESULT_INVALID;
   }
 
-  // get dsa for all converters
-  // TODO: note that in this way the dsa info is sent back appended as multiple
-  // args in the same inform rather than multiple informs in a single reply.
-  // This was part of testing what is available on th tbs side as a way for a
-  // client (casperfpga) to parse work with response.
-  prepend_inform_katcp(d);
-  for (int tile = 0; tile < NUM_TILES; tile++) {
-    for (int blk = 0; blk < NUM_BLKS; blk++) {
-      if (XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
-        result = XRFdc_GetDSA(rfdc->xrfdc, tile, blk, &dsa);
-        if (result != XRFDC_SUCCESS) {
-          log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get dsa");
-          return KATCP_RESULT_FAIL;
-        }
-        //prepend_inform_katcp(d);
-        //append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "adc: tile %u, blk %u, dsa %1.f", tile, blk, dsa.Attenuation);
-        //unsigned int katcp_flags = (tile==NUM_TILES-1 && blk==NUM_BLKS-1) ? KATCP_FLAG_STRING|KATCP_FLAG_LAST : KATCP_FLAG_STRING;
-        append_args_katcp(d, KATCP_FLAG_STRING, "adc: tile %u, blk %u, dsa %1.f", tile, blk, dsa.Attenuation);
-      } else {
-        //prepend_inform_katcp(d);
-        //append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "adc: tile %u, blk %u, (disabled)", tile, blk);
-        //unsigned int katcp_flags = (tile==NUM_TILES-1 && blk==NUM_BLKS-1) ? KATCP_FLAG_STRING|KATCP_FLAG_LAST : KATCP_FLAG_STRING;
-        append_args_katcp(d, KATCP_FLAG_STRING, "adc: tile %u, blk %u, (disabled)", tile, blk);
-      }
-    }
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
   }
-  append_end_katcp(d);
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if tile is enabled
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get freeze calibration value
+  freeze_calibration = arg_unsigned_long_katcp(d, 3);
+  if (freeze_calibration!=XRFDC_CAL_FREEZE_CALIB && freeze_calibration!=XRFDC_CAL_UNFREEZE_CALIB) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid cal freeze setting %u, must be 0 (unfreeze), 1 (freeze)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // set cal freeze settings
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set cal freeze settings tile: %u, blk: %u to %u", tile, blk, freeze_calibration);
+  cal_freeze.DisableFreezePin = disable_freeze_pin;
+  cal_freeze.FreezeCalibration = freeze_calibration;
+  result = XRFdc_SetCalFreeze(rfdc->xrfdc, tile, blk, &cal_freeze);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set cal freeze settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // read back, format and send freze status
+  result = XRFdc_GetCalFreeze(rfdc->xrfdc, tile, blk, &cal_freeze);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get cal freeze info");
+    return KATCP_RESULT_FAIL;
+  }
+  // format and send status
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "CalFrozen %u, DisableFreezePin %u, FreezeCalibration %u",
+    cal_freeze.CalFrozen, cal_freeze.DisableFreezePin, cal_freeze.FreezeCalibration);
 
   return KATCP_RESULT_OK;
 }
 
-// current values in μA
-// ES1 6425 to 32000, rounded to nearest increment
-// Production silicon 2250 to 40500, rounded to nearest increment
-int rfdc_set_vop_cmd(struct katcp_dispatch *d, int argc) {
+int rfdc_get_cal_coeffs_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
   unsigned int tile, blk;
-  unsigned int max_current_uA;
-  unsigned int min_current_uA;
-  unsigned int current_uA;
-  unsigned int output_current_uA;
-  unsigned int result;
+  unsigned int cal_block;
+  XRFdc_Calibration_Coefficients cal_coeffs;
+  int result;
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
-  if (tr == NULL) {
+  if(tr == NULL) {
     return KATCP_RESULT_FAIL;
   }
 
   rfdc = tr->r_rfdc;
-  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  // todo: rfdc driver has a built-in `isready` to indicate driver
+  // initialization. should use that instead.
   if (!rfdc->initialized) {
     extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
     return KATCP_RESULT_OWN;
   }
 
-  // parse target dac tile and block
+  // parse target adc tile and block
   if (argc < 4) {
     // TODO: update help string for number of tiles for the device
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify dac tile idx (0-3), dac block idx, and current in uA");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3) and adc block idx (0-3) and cal block id");
     return KATCP_RESULT_INVALID;
   }
 
   tile = arg_unsigned_long_katcp(d, 1);
   // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
   // check if enabled
-  if (!XRFdc_IsDACBlockEnabled(rfdc->xrfdc, tile, blk)) {
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
     prepend_inform_katcp(d);
     append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
     return KATCP_RESULT_OK;
   }
 
-
-  current_uA = arg_unsigned_long_katcp(d, 3);
-
-  // check requested vop value within range
-  // ES1 6425 to 32000 uA, rounded to nearest step increments
-  // Production silicon 2250 to 40500 uA, rounded to nearest step increments
-  max_current_uA = XRFDC_MAX_I_UA(rfdc->xrfdc->RFdc_Config.SiRevision);
-  min_current_uA = XRFDC_MIN_I_UA(rfdc->xrfdc->RFdc_Config.SiRevision);
-  if (current_uA > max_current_uA) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "VOP setting %u is too high, max supported VOP current is %u uA",
-      current_uA, max_current_uA);
+  // get calibration block id
+  cal_block = arg_unsigned_long_katcp(d, 3);
+  if (cal_block < 0 || cal_block > 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid valid cal block %u, must be in range 0-3");
     return KATCP_RESULT_INVALID;
   }
 
-  if (current_uA < min_current_uA) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "VOP setting %u is too low, min supported VOP current is %u uA",
-      current_uA, min_current_uA);
+  // OCB1 block only available on gen3 devices
+  if (cal_block==XRFDC_CAL_BLOCK_OCB1 && rfdc->xrfdc->RFdc_Config.IPType!=XRFDC_GEN3) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "OCB1 cal block only supported on Gen 3 devices");
     return KATCP_RESULT_INVALID;
   }
 
-  // set vop
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set dac tile: %u, blk: %u, vop: %u uA", tile, blk, current_uA);
-  result = XRFdc_SetDACVOP(rfdc->xrfdc, tile, blk, current_uA);
+  // get calibration coeffs
+  memset(&cal_coeffs, 0, sizeof(cal_coeffs));
+  result = XRFdc_GetCalCoefficients(rfdc->xrfdc, tile, blk, cal_block, &cal_coeffs);
   if (result != XRFDC_SUCCESS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set output current");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get cal coeff for block id %u", cal_block);
     return KATCP_RESULT_FAIL;
   }
-
-  // read back, format and send output current status
-  result = XRFdc_GetOutputCurr(rfdc->xrfdc, tile, blk, &output_current_uA);
-  if (result != XRFDC_SUCCESS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to read output current after set");
-    return KATCP_RESULT_FAIL;
-  }
+  // format and send status
   prepend_inform_katcp(d);
-  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "current %u", output_current_uA);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
+    "Coeff0 %u, Coeff1 %u, Coeff2 %u, Coeff3 %u, "
+    "Coeff4 %u, Coeff5 %u, Coeff6 %u, Coeff7 %u",
+    cal_coeffs.Coeff0, cal_coeffs.Coeff1, cal_coeffs.Coeff2, cal_coeffs.Coeff3,
+    cal_coeffs.Coeff4, cal_coeffs.Coeff5, cal_coeffs.Coeff6, cal_coeffs.Coeff7);
 
   return KATCP_RESULT_OK;
 }
 
+int rfdc_set_cal_coeffs_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  unsigned int cal_block;
+  XRFdc_Calibration_Coefficients cal_coeffs;
+  int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // todo: rfdc driver has a built-in `isready` to indicate driver
+  // initialization. should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse target adc tile and block
+  if (argc < 12) {
+    // TODO: update help string for number of tiles for the device
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), block idx (0-3), cal block id, and 8 coeffs");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get calibration block id
+  cal_block = arg_unsigned_long_katcp(d, 3);
+  if (cal_block < 0 || cal_block > 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid valid cal block %u, must be in range 0-3");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // OCB1 block only available on gen3 devices
+  if (cal_block==XRFDC_CAL_BLOCK_OCB1 && rfdc->xrfdc->RFdc_Config.IPType!=XRFDC_GEN3) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "OCB1 cal block only supported on Gen 3 devices");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse user calibration coeffs
+  cal_coeffs.Coeff0 = arg_unsigned_long_katcp(d, 4);
+  cal_coeffs.Coeff1 = arg_unsigned_long_katcp(d, 5);
+  cal_coeffs.Coeff2 = arg_unsigned_long_katcp(d, 6);
+  cal_coeffs.Coeff3 = arg_unsigned_long_katcp(d, 7);
+  cal_coeffs.Coeff4 = arg_unsigned_long_katcp(d, 8);
+  cal_coeffs.Coeff5 = arg_unsigned_long_katcp(d, 9);
+  cal_coeffs.Coeff6 = arg_unsigned_long_katcp(d, 10);
+  cal_coeffs.Coeff7 = arg_unsigned_long_katcp(d, 11);
+
+  // set calibration coeffs
+  result = XRFdc_SetCalCoefficients(rfdc->xrfdc, tile, blk, cal_block, &cal_coeffs);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get cal coeff for block id %u", cal_block);
+    return KATCP_RESULT_FAIL;
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_disable_cal_override_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  unsigned int cal_block;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and cal block id");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if tile is enabled
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get calibration block id
+  cal_block = arg_unsigned_long_katcp(d, 3);
+  if (cal_block < 0 || cal_block > 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid valid cal block %u, must be in range 0-3");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // OCB1 block only available on gen3 devices
+  if (cal_block==XRFDC_CAL_BLOCK_OCB1 && rfdc->xrfdc->RFdc_Config.IPType!=XRFDC_GEN3) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "OCB1 cal block only supported on Gen 3 devices");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // disable calibration coefficients set by the user
+  result = XRFdc_DisableCoefficientsOverride(rfdc->xrfdc, tile, blk, cal_block);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to disable user calibration coeffs");
+    return KATCP_RESULT_FAIL;
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_cal_mode_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  unsigned char cal_mode;
+  int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // todo: rfdc driver has a built-in `isready` to indicate driver
+  // initialization. should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse target adc tile and block
+  if (argc < 3) {
+    // TODO: update help string for number of tiles for the device
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3) and adc block idx (0-3)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get cal mode for converter
+  result = XRFdc_GetCalibrationMode(rfdc->xrfdc, tile, blk, &cal_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get cal mode info");
+    return KATCP_RESULT_FAIL;
+  }
+  // format and send status
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "CalibrationMode %u", cal_mode);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_cal_mode_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  unsigned char cal_mode;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and cal mode (1 or 2)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if tile is enabled
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get requested calibration mode
+  cal_mode = arg_unsigned_long_katcp(d, 3);
+  if (cal_mode > 2 || cal_mode < 1) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid cal mode setting %u, must be 1 (mode 1), 2 (mode 1)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // set cal mode
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set cal mode tile: %u, blk: %u to %u", tile, blk, cal_mode);
+  result = XRFdc_SetCalibrationMode(rfdc->xrfdc, tile, blk, cal_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set cal freeze settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // must shutdown and startup tile to apply new calibration mode
+  result = XRFdc_Shutdown(rfdc->xrfdc, XRFDC_ADC_TILE, tile);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_FATAL, NULL, "tile shutdown fail, this should not happen, fatal error");
+    return KATCP_RESULT_FAIL;
+  }
+
+  result = XRFdc_StartUp(rfdc->xrfdc, XRFDC_ADC_TILE, tile);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_FATAL, NULL, "tile sartup fail, this should not happen, fatal error");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // read back, format and send mode info
+  result = XRFdc_GetCalibrationMode(rfdc->xrfdc, tile, blk, &cal_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get cal mode info");
+    return KATCP_RESULT_FAIL;
+  }
+  // format and send status
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "CalibrationMode %u", cal_mode);
+
+  return KATCP_RESULT_OK;
+}
+
+// TODO: Over/under threshold signals are sent to the PL. These need to be added
+// to the PL interface for this software driver to do anything meaningful.
+// Threshold number update macro's
+// XRFDC_UPDATE_THRESHOLD_0 0x1U
+// XRFDC_UPDATE_THRESHOLD_1 0x2U
+// XRFDC_UPDATE_THRESHOLD_BOTH 0x4U
+int rfdc_get_thresh_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  XRFdc_Threshold_Settings threshold;
+  int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // todo: rfdc driver has a built-in `isready` to indicate driver
+  // initialization. should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse target adc tile and block
+  if (argc < 3) {
+    // TODO: update help string for number of tiles for the device
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3) and adc block idx (0-3)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if requested adc tile/blk enabled
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get threshold settings for converter
+  memset(&threshold, 0, sizeof(threshold));
+  result = XRFdc_GetThresholdSettings(rfdc->xrfdc, tile, blk, &threshold);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get cal threshold info");
+    return KATCP_RESULT_FAIL;
+  }
+  // format and send status
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "UpdateThreshold %u, ThresholdMode0 %u, ThresholdMode1 %u, "
+    "ThresholdAvgVal0 %u, ThresholdAvgVal1 %u, ThresholdUnderVal0 %u, ThresholdUnderVal1 %u, "
+    "ThresholdOverVal0 %u, ThresholdOverVal1 %u",
+    threshold.UpdateThreshold, threshold.ThresholdMode[0], threshold.ThresholdMode[1],
+    threshold.ThresholdAvgVal[0], threshold.ThresholdAvgVal[1], threshold.ThresholdUnderVal[0], threshold.ThresholdUnderVal[1],
+    threshold.ThresholdOverVal[0], threshold.ThresholdOverVal[1]);
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_thresh_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  XRFdc_Threshold_Settings threshold;
+  int result;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // todo: rfdc driver has a built-in `isready` to indicate driver
+  // initialization. should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse target adc tile and block
+  if (argc < 12) {
+    // TODO: update help string for number of tiles for the device
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx (0-3), and threshold settings value");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if requested adc tile/blk enabled
+  if (!XRFdc_IsADCBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // parse user threshold settings
+  // entry 0 is for thershold0 flag, and entry 1 is for thereshold1 flag. The
+  // two flags operate independently of eachother.
+  memset(&threshold, 0, sizeof(threshold));
+  threshold.UpdateThreshold      = arg_unsigned_long_katcp(d, 3);
+  threshold.ThresholdMode[0]     = arg_unsigned_long_katcp(d, 4);
+  threshold.ThresholdMode[1]     = arg_unsigned_long_katcp(d, 5);
+  threshold.ThresholdAvgVal[0]   = arg_unsigned_long_katcp(d, 6);
+  threshold.ThresholdAvgVal[1]   = arg_unsigned_long_katcp(d, 7);
+  threshold.ThresholdUnderVal[0] = arg_unsigned_long_katcp(d, 8);
+  threshold.ThresholdUnderVal[1] = arg_unsigned_long_katcp(d, 9);
+  threshold.ThresholdOverVal[0]  = arg_unsigned_long_katcp(d, 10);
+  threshold.ThresholdOverVal[1]  = arg_unsigned_long_katcp(d, 11);
+
+  // TODO: validate threshold levels, these are 14-bit unsigned values in the
+  // range (0,16383). The max value 16383 represents the absolute value of the
+  // full-scale input of an ADC.
+
+  result = XRFdc_SetThresholdSettings(rfdc->xrfdc, tile, blk, &threshold);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get cal threshold info");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // readback, format and send threshold settings
+  result = XRFdc_GetThresholdSettings(rfdc->xrfdc, tile, blk, &threshold);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to readback new cal threshold info");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "UpdateThreshold %u, ThresholdMode0 %u, ThresholdMode1 %u, "
+    "ThresholdAvgVal0 %u, ThresholdAvgVal1 %u, ThresholdUnderVal0 %u, ThresholdUnderVal1 %u, "
+    "ThresholdOverVal0 %u, ThresholdOverVal1 %u",
+    threshold.UpdateThreshold, threshold.ThresholdMode[0], threshold.ThresholdMode[1],
+    threshold.ThresholdAvgVal[0], threshold.ThresholdAvgVal[1], threshold.ThresholdUnderVal[0], threshold.ThresholdUnderVal[1],
+    threshold.ThresholdOverVal[0], threshold.ThresholdOverVal[1]);
+
+  return KATCP_RESULT_OK;
+}
+
+/************************************************************************************************/
 int rfdc_get_output_curr_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
@@ -1729,8 +3271,428 @@ int rfdc_get_output_curr_all_cmd(struct katcp_dispatch *d, int argc) {
   return KATCP_RESULT_OK;
 }
 
-/************************************************************************************************/
+// current values in μA
+// ES1 6425 to 32000, rounded to nearest increment
+// Production silicon 2250 to 40500, rounded to nearest increment
+int rfdc_set_vop_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  unsigned int max_current_uA;
+  unsigned int min_current_uA;
+  unsigned int current_uA;
+  unsigned int output_current_uA;
+  unsigned int result;
 
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if (tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse target dac tile and block
+  if (argc < 4) {
+    // TODO: update help string for number of tiles for the device
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify dac tile idx (0-3), dac block idx, and current in uA");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  // TODO: update check for correct number of tiles for the device, should populate in tbs rfdc using api commands
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  // TODO: update check for correct number of blocks for the device, should populate in tbs rfdc using api commands
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsDACBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+
+  current_uA = arg_unsigned_long_katcp(d, 3);
+
+  // check requested vop value within range
+  // ES1 6425 to 32000 uA, rounded to nearest step increments
+  // Production silicon 2250 to 40500 uA, rounded to nearest step increments
+  max_current_uA = XRFDC_MAX_I_UA(rfdc->xrfdc->RFdc_Config.SiRevision);
+  min_current_uA = XRFDC_MIN_I_UA(rfdc->xrfdc->RFdc_Config.SiRevision);
+  if (current_uA > max_current_uA) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "VOP setting %u is too high, max supported VOP current is %u uA",
+      current_uA, max_current_uA);
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (current_uA < min_current_uA) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "VOP setting %u is too low, min supported VOP current is %u uA",
+      current_uA, min_current_uA);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // set vop
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set dac tile: %u, blk: %u, vop: %u uA", tile, blk, current_uA);
+  result = XRFdc_SetDACVOP(rfdc->xrfdc, tile, blk, current_uA);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set output current");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // read back, format and send output current status
+  result = XRFdc_GetOutputCurr(rfdc->xrfdc, tile, blk, &output_current_uA);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to read output current after set");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "current %u", output_current_uA);
+
+  return KATCP_RESULT_OK;
+}
+
+// InvSincFIR mode Valid values are: 0 (disable), 1 (first Nyquist zone), and
+// for Gen 3 devices only, 2 (second Nyquist zone).
+// In the driver API there is no macro for "disable" and the first/second nyquist
+// zones have definition XRFDC_INV_SYNC_EN_MAX=1 and XRFDC_INV_SYNC_MODE_MAX=2, respectively
+int rfdc_get_invsincfir_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  short unsigned int invsincfir_mode;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse converter tile and block parameters
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsDACBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get converter inv sinc fir value
+  result = XRFdc_GetInvSincFIR(rfdc->xrfdc, tile, blk, &invsincfir_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get inverse sinc filter status");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // format and send nyquist zone info
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "InvSincFIRMode %u", invsincfir_mode);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_invsincfir_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  short unsigned int invsincfir_mode;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse converter tile and block parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), inv sinc FIR mode");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsDACBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // parse user inv sinc fir parameter, second nyquist block only available on gen3 devices
+  invsincfir_mode = arg_unsigned_long_katcp(d, 3);
+  if (invsincfir_mode==XRFDC_INV_SYNC_MODE_MAX && rfdc->xrfdc->RFdc_Config.IPType!=XRFDC_GEN3) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "second nyquist sinc fir operation only supported on Gen 3 devices");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // set converter inv sinc fir value
+  result = XRFdc_SetInvSincFIR(rfdc->xrfdc, tile, blk, invsincfir_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get inverse sinc filter status");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // readback and send inverse sinc fir mode
+  result = XRFdc_GetInvSincFIR(rfdc->xrfdc, tile, blk, &invsincfir_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get inverse sinc filter status");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "InvSincFIRMode %u", invsincfir_mode);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_invsincfir_enabled_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  unsigned int tile, blk;
+  unsigned int invsincfir_en;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse converter tile and block parameters
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsDACBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get if inv sinc fir enabled, format and send info
+  invsincfir_en = XRFdc_GetInverseSincFilter(rfdc->xrfdc, tile, blk);
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "InvSincFIREnabled %u", invsincfir_en);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_imr_mode_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  unsigned int imr_mode;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // check that IMR is supported
+  if (rfdc->xrfdc->RFdc_Config.IPType < XRFDC_GEN3) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "IMR mode settings only supported on Gen 3 devices");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter tile and block parameters
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsDACBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get IMR mode value
+  result = XRFdc_GetIMRPassMode(rfdc->xrfdc, tile, blk, &imr_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get IMR mode value");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // format and send IMR mode info
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "IMRPassMode %u", imr_mode);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_imr_mode_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  unsigned int imr_mode;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // check that IMR mode is supported
+  if (rfdc->xrfdc->RFdc_Config.IPType < XRFDC_GEN3) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "IMR settings only supported on Gen 3 devices");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter tile and block parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), IMR pass mode 0(lowpass)|1(highpass)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // check if enabled
+  if (!XRFdc_IsDACBlockEnabled(rfdc->xrfdc, tile, blk)) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // parse user IMR mode setting
+  imr_mode = arg_unsigned_long_katcp(d, 3);
+  if (imr_mode!=XRFDC_DAC_IMR_MODE_LOWPASS && imr_mode!=XRFDC_DAC_IMR_MODE_HIGHPASS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid IMR mode setting, %u", imr_mode);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // set IMR mode value
+  result = XRFdc_SetIMRPassMode(rfdc->xrfdc, tile, blk, imr_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set IMR mode value");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // readback, format and send IMR mode info
+  result = XRFdc_GetIMRPassMode(rfdc->xrfdc, tile, blk, &imr_mode);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to readback IMR mode");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "IMRPassMode %u", imr_mode);
+
+  return KATCP_RESULT_OK;
+}
+
+/************************************************************************************************/
 int rfdc_driver_ver_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   float driver_ver;
