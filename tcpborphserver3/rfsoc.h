@@ -51,6 +51,7 @@ int rfdc_status_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_block_status_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_master_tile_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_update_event_cmd(struct katcp_dispatch *d, int argc);
 
 // converter datapath commands
 int rfdc_get_fabclkfreq_cmd(struct katcp_dispatch *d, int argc);

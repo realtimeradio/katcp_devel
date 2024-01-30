@@ -2171,7 +2171,7 @@ int rfdc_set_qmc_cmd(struct katcp_dispatch *d, int argc) {
   // set qmc settings for the converter
   result = XRFdc_SetQMCSettings(rfdc->xrfdc, converter_type, tile, blk, &qmc);
   if (result != XRFDC_SUCCESS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get coarse delay settings");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set qmc settings");
     return KATCP_RESULT_FAIL;
   }
 
@@ -2322,7 +2322,7 @@ int rfdc_dynamic_pll_config_cmd(struct katcp_dispatch *d, int argc) {
   refclkfreq = arg_double_katcp(d, 4);
   if (clk_source==XRFDC_INTERNAL_PLL_CLK) {
     if (refclkfreq<XRFDC_REFFREQ_MIN || refclkfreq>XRFDC_REFFREQ_MAX) {
-      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "requested pll rate out of bounds (%u-%u) MHz", XRFDC_REFFREQ_MIN, XRFDC_REFFREQ_MAX);
+      log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "requested pll rate out of bounds (%g-%g) MHz", XRFDC_REFFREQ_MIN, XRFDC_REFFREQ_MAX);
       return KATCP_RESULT_FAIL;
     }
   }
@@ -2338,7 +2338,7 @@ int rfdc_dynamic_pll_config_cmd(struct katcp_dispatch *d, int argc) {
   // dynamically configure PLL settings
   result = XRFdc_DynamicPLLConfig(rfdc->xrfdc, converter_type, tile, clk_source, refclkfreq, sampling_rate);
   if (result != XRFDC_SUCCESS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set nyquist zone");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set pll configuration");
     return KATCP_RESULT_FAIL;
   }
 
@@ -3396,13 +3396,13 @@ int rfdc_get_invsincfir_cmd(struct katcp_dispatch *d, int argc) {
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
@@ -3455,13 +3455,13 @@ int rfdc_set_invsincfir_cmd(struct katcp_dispatch *d, int argc) {
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
@@ -3525,13 +3525,13 @@ int rfdc_invsincfir_enabled_cmd(struct katcp_dispatch *d, int argc) {
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
@@ -3584,13 +3584,13 @@ int rfdc_get_imr_mode_cmd(struct katcp_dispatch *d, int argc) {
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
@@ -3615,6 +3615,8 @@ int rfdc_get_imr_mode_cmd(struct katcp_dispatch *d, int argc) {
   return KATCP_RESULT_OK;
 }
 
+// XRFDC_DAC_IMR_MODE_LOWPASS 0U
+// XRFDC_DAC_IMR_MODE_HIGHPASS 1U
 int rfdc_set_imr_mode_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
@@ -3649,13 +3651,13 @@ int rfdc_set_imr_mode_cmd(struct katcp_dispatch *d, int argc) {
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "dac block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
@@ -3688,6 +3690,86 @@ int rfdc_set_imr_mode_cmd(struct katcp_dispatch *d, int argc) {
   }
   prepend_inform_katcp(d);
   append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "IMRPassMode %u", imr_mode);
+
+  return KATCP_RESULT_OK;
+}
+
+// Use this function to trigger the update event for an event if the event
+// source is Slice or Tile.
+//
+// 1 - update mixer
+// 2 - update coarse delay
+// 4 - update qmc
+int rfdc_update_event_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  int converter_type;
+  unsigned int update_event;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 5) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), blk idx (0-3), and converter type (adc|dac), and event update (1-mixer, 2-coarse delay, 4-qmc)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "converter tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "converter block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // parse update event
+  update_event = arg_unsigned_long_katcp(d, 4);
+  if ((update_event != XRFDC_EVENT_MIXER) && (update_event != XRFDC_EVENT_QMC) && (update_event != XRFDC_EVENT_CRSE_DLY)) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid update event, must be Mixer, QMC, or Coarse Delay");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // trigger update event
+  result = XRFdc_UpdateEvent(rfdc->xrfdc, converter_type, tile, blk, update_event);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to trigger update event");
+    return KATCP_RESULT_FAIL;
+  }
 
   return KATCP_RESULT_OK;
 }

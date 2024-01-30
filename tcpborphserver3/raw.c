@@ -3221,6 +3221,7 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-status", "report tile status, state, pll info (?rfdc-status)", &rfdc_status_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-block-status", "get converter tile block status (?rfdc-block-status tile-idx block-idx adc|dac)", &rfdc_get_block_status_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-master-tile", "get master tile for rfdc adcs (?rfdc-get-master-tile)", &rfdc_get_master_tile_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-update-event", "trigger update event (?rfdc-update-event tile-idx, block-idx adc|dac event-trigger)", &rfdc_update_event_cmd, 0, TBS_MODE_RAW);
 
   // converter datapath commands
   result += register_flag_mode_katcp(d, "?rfdc-get-fab-clk-freq", "get programmed pl clk frequency (?rfdc-get-fab-clk-freq tile-num adc|dac)", &rfdc_get_fabclkfreq_cmd, 0, TBS_MODE_RAW);
