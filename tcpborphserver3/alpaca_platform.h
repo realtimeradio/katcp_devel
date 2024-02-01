@@ -1,1 +1,1 @@
-/home/bjacobm/git/i2c-utils/alpaca_platform.h
+i2c-utils/alpaca_platform.h

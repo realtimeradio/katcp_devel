@@ -1,1 +1,1 @@
-/home/bjacobm/git/i2c-utils/alpaca_rfclks.c
+i2c-utils/alpaca_rfclks.c

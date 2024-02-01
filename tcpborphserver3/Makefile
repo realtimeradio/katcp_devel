@@ -1,5 +1,5 @@
 KATCP ?= ../katcp
-RFDC ?= ../rfdc_v8.1
+RFDC ?= ../rfdc
 RFSOC_PLATFORM ?=
 SYSROOT ?= ../sysroot
 IS_RFSOC ?= 0

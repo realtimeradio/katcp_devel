@@ -104,6 +104,5 @@ int rfdc_set_invsincfir_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_invsincfir_enabled_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_imr_mode_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_set_imr_mode_cmd(struct katcp_dispatch *d, int argc);
->>>>>>> rfdc-dsa-vop
 
 #endif // RFSOC_H_
