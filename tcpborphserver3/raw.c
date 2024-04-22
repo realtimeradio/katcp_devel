@@ -3219,12 +3219,18 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-init", "initialize rfdc driver (?rfdc-init)", &rfdc_init_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-driver-ver", "get rfdc library version (?rfdc-driver-ver)", &rfdc_driver_ver_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-status", "report tile status, state, pll info (?rfdc-status)", &rfdc_status_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-shutdown", "shutdown target converter tile (?rfdc-shutdown tile-num adc|dac)", &rfdc_shutdown_tile_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-startup", "startup target converter tile (?rfdc-startup tile-num adc|dac)", &rfdc_startup_tile_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-block-status", "get converter tile block status (?rfdc-block-status tile-idx block-idx adc|dac)", &rfdc_get_block_status_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-master-tile", "get master tile for rfdc adcs (?rfdc-get-master-tile)", &rfdc_get_master_tile_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-update-event", "trigger update event (?rfdc-update-event tile-idx, block-idx adc|dac event-trigger)", &rfdc_update_event_cmd, 0, TBS_MODE_RAW);
 
   // converter datapath commands
   result += register_flag_mode_katcp(d, "?rfdc-get-fab-clk-freq", "get programmed pl clk frequency (?rfdc-get-fab-clk-freq tile-num adc|dac)", &rfdc_get_fabclkfreq_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-get-fab-clkdiv-out", "get converter pl clk divider (?rfdc-get-fab-clkdiv-out tile-num adc|dac)", &rfdc_get_fabclkdiv_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-fab-clkdiv-out", "set converter pl clk divider (?rfdc-set-fab-clkdiv-out tile-num adc|dac clkdiv)", &rfdc_set_fabclkdiv_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-get-fab-wrvld-words", "get write pl data rate for converter (?rfdc-get-fab-wrvld-words tile-num blk-num adc|dac)", &rfdc_get_fabwrvldwords_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-get-fab-rdvld-words", "get read pl data date for converter (?rfdc-get-fab-rdvld-words tile-num blk-num adc|dac)", &rfdc_get_fabrdvldwords_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-datatype", "get converter data type(?rfdc-get-datatype tile-num block-num adc|dac)", &rfdc_get_datatype_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-datawidth", "get converter datawidth at pl interface (?rfdc-get-datawidth tile-num block-num adc|dac)", &rfdc_get_datawidth_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-nyquist-zone", "get nyquist zone for adc|dac converter (?rfdc-get-nyquist-zone tile-num block-num adc|dac)", &rfdc_get_nyquist_zone_cmd, 0, TBS_MODE_RAW);
@@ -3233,8 +3239,13 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-set-coarse-delay", "set coarse delay for adc|dac converter (?rfdc-set-coarse-delay tile-num block-num adc|dac coarse-delay update-source)", &rfdc_set_coarse_delay_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-qmc-settings", "get qmc settings delay for adc|dac converter (?rfdc-get-qmc-settings tile-num block-num adc|dac)", &rfdc_get_qmc_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-set-qmc-settings", "set qmc settings delay for adc|dac converter (?rfdc-set-qmc-settings tile-num block-num adc|dac)", &rfdc_set_qmc_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-report-mixer", "report adc or dac mixer settings for tile and blk (?rfdc-report-nco tile-idx blk-idx [adc|dac]", &rfdc_report_mixer_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-update-nco", "update adc or dac mixer nco frequency for tile and blk (?rfdc-update-nco) (?rfdc-update-nco tile-idx blk-idx nco-ghz [adc|dac])", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-get-mixer-settings", "get adc|dac mixer settings for tile and blk (?rfdc-get-mixer-setings tile-idx blk-idx [adc|dac]", &rfdc_get_mixer_settings_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-mixer-mode", "set mixer mode for adc|dac converter tile and blk (?rfdc-set-mixer-mode tile-idx blk-idx adc|dac mixer-mode [trigger]", &rfdc_set_mixer_mode_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-mixer-type", "set mixer type for adc|dac converter tile and blk (?rfdc-set-mixer-type tile-idx blk-idx adc|dac mixer-type [trigger]", &rfdc_set_mixer_type_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-coarse-mixer-freq","set coarse mixer freq for adc|dac converter tile and blk (?rfdc-set-coarse-mixer-freq tile-idx blk-idx adc|dac coarse-freq [trigger]", &rfdc_set_coarse_mixer_freq_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-mixer-scale","set mixer scale for adc|dac converter tile and blk (?rfdc-set-mixer-scale tile-idx blk-idx adc|dac mixer-scale [trigger]", &rfdc_set_mixer_scale_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-mixer-event-source","set source for mixer update events for adc|dac converter tile and blk (?rfdc-set-mixer-event-source tile-idx blk-idx adc|dac", &rfdc_set_mixer_event_source_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-update-nco", "set fine mixer freq and phase for adc|dac converter tile and blk (?rfdc-update-nco) (?rfdc-update-nco tile-idx blk-idx adc|dac nco-ghz [phase] [trigger])", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
 
   // converter pll commands
   result += register_flag_mode_katcp(d, "?rfdc-get-pll-config", "get pll config for adc|dac converter (?rfdc-get-pll-config tile-num adc|dac)", &rfdc_get_pll_config_cmd, 0, TBS_MODE_RAW);

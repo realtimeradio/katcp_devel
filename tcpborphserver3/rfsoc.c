@@ -816,7 +816,124 @@ int rfdc_status_cmd(struct katcp_dispatch *d, int argc) {
   }
 
   return KATCP_RESULT_OK;
+}
 
+int rfdc_shutdown_tile_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile;
+  char* type;
+  unsigned int converter_type;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse tile and converter type
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  result = XRFdc_Shutdown(rfdc->xrfdc, XRFDC_ADC_TILE, tile);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_FATAL, NULL, "tile shutdown fail, this should not happen, fatal error");
+    return KATCP_RESULT_FAIL;
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_startup_tile_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile;
+  char* type;
+  unsigned int converter_type;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse tile and converter type
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  result = XRFdc_StartUp(rfdc->xrfdc, XRFDC_ADC_TILE, tile);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_FATAL, NULL, "tile sartup fail, this should not happen, fatal error");
+    return KATCP_RESULT_FAIL;
+  }
+
+  return KATCP_RESULT_OK;
 }
 
 int rfdc_get_block_status_cmd(struct katcp_dispatch *d, int argc) {
@@ -902,7 +1019,6 @@ int rfdc_get_block_status_cmd(struct katcp_dispatch *d, int argc) {
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
-  // mts cmd variables
   int result;
   unsigned int tilemask;
   unsigned int factor;
@@ -926,7 +1042,7 @@ int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
   }
 
   tilemask = arg_unsigned_long_katcp(d, 1);
-  if (tilemask > 0xf) { // TODO: check range of values, irc it is a 4-bit mask each bit a tile
+  if (tilemask > 0xf) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile mask must be in range (0-%d)", 0xf);
     return KATCP_RESULT_INVALID;
   }
@@ -943,10 +1059,6 @@ int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
   if(result != XRFDC_MTS_OK) {
     extra_response_katcp(d, KATCP_RESULT_FAIL,"mts sync fail, error code 0x%08x", result);
     return KATCP_RESULT_OWN;
-    //prepend_inform_katcp(d);
-    //append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-    //  "mts synch fail, error code, 0x%08x", result);
-    //return RESULT_KATCP_FAIL;
   }
 
   // inform with detailed report TODO: could make report a verbose cmd option
@@ -1001,14 +1113,12 @@ int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
 
 /*
   ?rfdc-mts-report
-
 */
 
 int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc) {
 
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
-  // mts cmd variables
   int result;
   unsigned int factor;
 
@@ -1112,7 +1222,7 @@ int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc) {
   get mixer information
 */
 
-int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc) {
+int rfdc_get_mixer_settings_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
   // cmd variables
@@ -1120,8 +1230,7 @@ int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc) {
   unsigned int tile, blk;
   XRFdc_Mixer_Settings mixer;
   char* type;
-  int mixer_type;
-  double nco;
+  unsigned int converter_type;
 
   // TODO: this header code parsing args/setup is the same as update-nco, make function for reuse
   tr = get_mode_katcp(d, TBS_MODE_RAW);
@@ -1136,83 +1245,136 @@ int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // parse adc tile, block and desired attenuation parameters
+  // parse tile, block and desired parameters
   if (argc < 4) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and desired nco freq in MHz");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac)");
     return KATCP_RESULT_INVALID;
   }
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
-  nco = arg_double_katcp(d, 3);
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set nco freq: %.3f MHz", nco);
-  // TODO: validate values, I know the valid values are [-fs/2, fs/2] but irc
-  // the driver will internally allow any value but should just have the effect
-  // of spectral aliasing
-
-  type = "adc"; // default to adc mixer
-  mixer_type = XRFDC_ADC_TILE;
-  if (argc > 4) {
-    type = arg_string_katcp(d, 4);
-    mixer_type = (strcmp(type, "adc") == 0) ? XRFDC_ADC_TILE : XRFDC_DAC_TILE;
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
   }
 
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "getting mixer settings for %s: tile:%d blk:%d", type, tile, blk);
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
 
   // use getter to populate mixer settings
-  result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &mixer);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "getting mixer settings for %s: tile:%d blk:%d", type, tile, blk);
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
   if (result != XRFDC_SUCCESS) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
     return KATCP_RESULT_FAIL;
   }
 
-  // could also just return the enum and have casperfpga convert to string
-  // and this may be better because looking at xrfdc.h, there are more things
-  // that may be useful to report that are enums (mixer type, event source,
-  // coarse mixer setting) and all these enums here would be cumbersome
-  //
-  // TODO: is there a way to just serialize a struct over? this way all of the
-  // status work can be done in casperfpga?
-  char* mode;
+  // verbosly report info here
+  char* mixer_mode;
   switch (mixer.MixerMode) {
     case XRFDC_MIXER_MODE_OFF:
-      mode = "off";
+      mixer_mode = "off";
       break;
     case XRFDC_MIXER_MODE_C2C:
-      mode = "c2c";
+      mixer_mode = "c2c";
       break;
     case XRFDC_MIXER_MODE_C2R:
-      mode = "c2r";
+      mixer_mode = "c2r";
       break;
     case XRFDC_MIXER_MODE_R2C:
-      mode = "r2c";
+      mixer_mode = "r2c";
       break;
     case XRFDC_MIXER_MODE_R2R:
-      mode = "r2r";
+      mixer_mode = "r2r";
       break;
-    default: mode = "mixer mode error";
+    default: mixer_mode = "mixer mode error";
   }
 
+  char* mixer_type;
+  switch (mixer.MixerType) {
+    case XRFDC_MIXER_TYPE_COARSE:
+      mixer_type = "coarse";
+      break;
+    case XRFDC_MIXER_TYPE_FINE:
+      mixer_type = "fine";
+      break;
+    case XRFDC_MIXER_TYPE_OFF:
+      mixer_type = "off";
+      break;
+    case XRFDC_MIXER_TYPE_DISABLED:
+      mixer_type = "disabled";
+      break;
+    default: mixer_type = "mixer type error";
+  }
+
+  char* coarse_mix_freq;
+  switch (mixer.CoarseMixFreq) {
+    case XRFDC_COARSE_MIX_OFF:
+      coarse_mix_freq = "off";
+      break;
+    case XRFDC_COARSE_MIX_SAMPLE_FREQ_BY_TWO:
+      coarse_mix_freq = "fs/2";
+      break;
+    case XRFDC_COARSE_MIX_SAMPLE_FREQ_BY_FOUR:
+      coarse_mix_freq = "fs/4";
+      break;
+    case XRFDC_COARSE_MIX_MIN_SAMPLE_FREQ_BY_FOUR:
+      coarse_mix_freq = "-fs/4";
+      break;
+    case XRFDC_COARSE_MIX_BYPASS:
+      coarse_mix_freq = "bypass";
+      break;
+    default: coarse_mix_freq = "mixer type error";
+  }
+
+  char* fine_mixer_scale;
+  switch (mixer.MixerType) {
+    case XRFDC_MIXER_SCALE_AUTO:
+      fine_mixer_scale = "auto";
+      break;
+    case XRFDC_MIXER_SCALE_1P0:
+      fine_mixer_scale = "1.0";
+      break;
+    case XRFDC_MIXER_SCALE_0P7:
+      fine_mixer_scale = "0.7";
+      break;
+    default: fine_mixer_scale = "mixer scale type error";
+  }
+
+  // verbosly log info
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "mode: %s (%d)", mixer_mode, mixer.MixerMode);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "type: %s (%d)", mixer_type, mixer.MixerType);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "fine freq: %g", mixer.Freq);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "phase offset: %g", mixer.PhaseOffset);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "mixer scale: %s (%d)", fine_mixer_scale, mixer.FineMixerScale);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "coarse freq: %s (%d)", coarse_mix_freq, mixer.CoarseMixFreq);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "event source: %d", mixer.EventSource);
+
+  // return params for client side parsing
   prepend_inform_katcp(d);
-  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "mode: %s, %d", mode, mixer.MixerMode);
-  prepend_inform_katcp(d);
-  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "fine freq: %f", mixer.Freq);
-  prepend_inform_katcp(d);
-  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "coarse freq: %d", mixer.CoarseMixFreq); // enum
-  prepend_inform_katcp(d);
-  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "phase offset: %g", mixer.PhaseOffset);
-  prepend_inform_katcp(d);
-  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "event source: %d", mixer.EventSource);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "MixerMode %u, MixerType %u, Freq %g, "
+  "PhaseOffset %g, FineMixerScale %u, CoarseMixFreq %u, EventSource %u",
+  mixer.MixerMode, mixer.MixerType, mixer.Freq, mixer.PhaseOffset, mixer.FineMixerScale,
+  mixer.CoarseMixFreq, mixer.EventSource);
 
   return KATCP_RESULT_OK;
 }
@@ -1226,7 +1388,6 @@ int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc) {
       handle that case. Here, just a simple update of the nco freq.
     * this method is for a single adc tile/blk a common use case will be to just
       set for all enabled tile/blk
-    * tile type option available, but throw not implemented for DAC
 */
 int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
@@ -1236,8 +1397,10 @@ int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
   unsigned int tile, blk;
   XRFdc_Mixer_Settings mixer;
   char* type;
-  int mixer_type;
-  double nco;
+  int converter_type;
+  double nco_freq;
+  double nco_phase;
+  unsigned int trigger_update = 1; // defaulat to force update event
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
   if(tr == NULL) {
@@ -1251,63 +1414,512 @@ int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // parse adc tile, block and desired attenuation parameters
-  if (argc < 4) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile idx (0-3), adc block idx, and desired nco freq in MHz");
+  // parse tile, block and desired parameters
+  if (argc < 5) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), freq [phase] [trigger]");
     return KATCP_RESULT_INVALID;
   }
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
-  nco = arg_double_katcp(d, 3);
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set nco freq: %.3f MHz", nco);
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
   // TODO: validate values, I know the valid values are [-fs/2, fs/2] but irc
   // the driver will internally allow any value but should just have the effect
   // of spectral aliasing
-
-  mixer_type = XRFDC_ADC_TILE; // default to adc mixer
-  if (argc > 4) {
-    type = arg_string_katcp(d, 4);
-    mixer_type = (strcmp(type, "adc") == 0) ? XRFDC_ADC_TILE : XRFDC_DAC_TILE;
+  // get nco freq and phase. If phase not specified default to 0
+  nco_freq = arg_double_katcp(d, 4);
+  if (argc > 5) {
+    nco_phase = arg_double_katcp(d, 5);
+  } else {
+    nco_phase = 0;
   }
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set nco freq : %.3f MHz", nco_freq);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set nco phase: %.3f deg", nco_phase);
 
-  // TODO extend DAC implementation
-  if (mixer_type == XRFDC_DAC_TILE) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "setting dac mixer nco not implemented");
-    // TODO see how to get invalid msg of not implemented at casperfpga client
-    return KATCP_RESULT_INVALID;
-  }
+  if (argc > 6) trigger_update = arg_unsigned_long_katcp(d, 6);
 
   // use getter to populate mixer settings
-  result = XRFdc_GetMixerSettings(rfdc->xrfdc, XRFDC_ADC_TILE, tile, blk, &mixer);
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
   if (result != XRFDC_SUCCESS) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
     return KATCP_RESULT_FAIL;
   }
 
   // change mixer freq settings, set, and call update
-  mixer.Freq = nco;
-  result = XRFdc_SetMixerSettings(rfdc->xrfdc, mixer_type, tile, blk, &mixer);
+  mixer.Freq = nco_freq;
+  mixer.PhaseOffset = nco_phase;
+  result = XRFdc_SetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
   if (result != XRFDC_SUCCESS) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set mixer settings");
     return KATCP_RESULT_FAIL;
   }
 
-  // TODO: mts/mcs applications will require control of event source update
-  XRFdc_UpdateEvent(rfdc->xrfdc, mixer_type, tile, blk, mixer.EventSource);
-  // TODO: how to know update event was successful?
+  if (trigger_update) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "trigger mixer update event");
+    XRFdc_UpdateEvent(rfdc->xrfdc, converter_type, tile, blk, XRFDC_EVENT_MIXER);
+  }
 
-  // read back?
+  return KATCP_RESULT_OK;
+}
+
+
+int rfdc_set_mixer_mode_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  int result;
+  unsigned int tile, blk;
+  XRFdc_Mixer_Settings mixer;
+  char* type;
+  unsigned int converter_type;
+  unsigned int mixer_mode;
+  unsigned int trigger_update = 1; // defaulat to force update event
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse tile, block and desired parameters
+  if (argc < 5) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), mixer mode, trigger");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  mixer_mode = arg_unsigned_long_katcp(d, 4);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set mixer mode: %d", mixer_mode);
+
+  if (argc > 5) trigger_update = arg_unsigned_long_katcp(d, 5);
+
+  // use getter to populate mixer settings
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // change mixer mode setting, set, and call update
+  mixer.MixerMode = mixer_mode;
+  result = XRFdc_SetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  if (trigger_update) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "trigger mixer update event");
+    XRFdc_UpdateEvent(rfdc->xrfdc, converter_type, tile, blk, XRFDC_EVENT_MIXER);
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+
+int rfdc_set_mixer_type_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  int result;
+  unsigned int tile, blk;
+  XRFdc_Mixer_Settings mixer;
+  char* type;
+  unsigned int converter_type;
+  unsigned int mixer_type;
+  unsigned int trigger_update = 1; // defaulat to force update event
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse tile, block and desired parameters
+  if (argc < 5) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), mixer type, trigger");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  mixer_type = arg_unsigned_long_katcp(d, 4);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set mixer type: %d", mixer_type);
+
+  if (argc > 5) trigger_update = arg_unsigned_long_katcp(d, 5);
+
+  // use getter to populate mixer settings
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // if poking the coarse mixer default to fs/4
+  if (mixer_type==XRFDC_MIXER_TYPE_COARSE && mixer.CoarseMixFreq==XRFDC_COARSE_MIX_OFF) {
+    mixer.CoarseMixFreq = XRFDC_COARSE_MIX_SAMPLE_FREQ_BY_FOUR;
+  }
+
+  // change mixer type setting, set, and call update
+  mixer.MixerType = mixer_type;
+  result = XRFdc_SetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  if (trigger_update) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "trigger mixer update event");
+    XRFdc_UpdateEvent(rfdc->xrfdc, converter_type, tile, blk, XRFDC_EVENT_MIXER);
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+
+int rfdc_set_coarse_mixer_freq_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  int result;
+  unsigned int tile, blk;
+  XRFdc_Mixer_Settings mixer;
+  char* type;
+  unsigned int converter_type;
+  unsigned int coarse_mixer_freq;
+  unsigned int trigger_update = 1; // defaulat to force update event
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse tile, block and desired parameters
+  if (argc < 5) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), coarse mixer freq, trigger");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  coarse_mixer_freq = arg_double_katcp(d, 4);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set coarse mixer freq: %d", coarse_mixer_freq);
+
+  if (argc > 5) trigger_update = arg_unsigned_long_katcp(d, 5);
+
+  // use getter to populate mixer settings
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // change mixer type setting, set, and call update
+  mixer.CoarseMixFreq = coarse_mixer_freq;
+  result = XRFdc_SetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  if (trigger_update) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "trigger mixer update event");
+    XRFdc_UpdateEvent(rfdc->xrfdc, converter_type, tile, blk, XRFDC_EVENT_MIXER);
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+
+int rfdc_set_mixer_scale_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  int result;
+  unsigned int tile, blk;
+  XRFdc_Mixer_Settings mixer;
+  char* type;
+  unsigned int converter_type;
+  unsigned int mixer_scale;
+  unsigned int trigger_update = 1; // defaulat to force update event
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse tile, block and desired parameters
+  if (argc < 5) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), mixer scale, trigger");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  mixer_scale = arg_unsigned_long_katcp(d, 4);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set mixer scale: %d", mixer_scale);
+
+  if (argc > 5) trigger_update = arg_unsigned_long_katcp(d, 5);
+
+  // use getter to populate mixer settings
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // change mixer type setting, set, and call update
+  mixer.FineMixerScale = mixer_scale;
+  result = XRFdc_SetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  if (trigger_update) {
+    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "trigger mixer update event");
+    XRFdc_UpdateEvent(rfdc->xrfdc, converter_type, tile, blk, XRFDC_EVENT_MIXER);
+  }
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_mixer_event_source_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  int result;
+  unsigned int tile, blk;
+  XRFdc_Mixer_Settings mixer;
+  char* type;
+  unsigned int converter_type;
+  unsigned int event_source;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse tile, block and desired parameters
+  if (argc < 5) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac), event source");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  event_source = arg_double_katcp(d, 4);
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "request set mixer event source: %d", event_source);
+
+  // use getter to populate mixer settings
+  result = XRFdc_GetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to get mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // change mixer type setting, set, and call update
+  mixer.EventSource = event_source;
+  result = XRFdc_SetMixerSettings(rfdc->xrfdc, converter_type, tile, blk, &mixer);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failure to set mixer settings");
+    return KATCP_RESULT_FAIL;
+  }
 
   return KATCP_RESULT_OK;
 }
@@ -1535,6 +2147,279 @@ int rfdc_set_dsa_cmd(struct katcp_dispatch *d, int argc) {
 
 /************************************************************************************************/
 
+int rfdc_get_fabrdvldwords_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  int converter_type;
+  unsigned int fab_rdvld_words;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and converter type
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), blk idx (0-3), and converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get converter fab rdvld words
+  result = XRFdc_GetFabRdVldWords(rfdc->xrfdc, converter_type, tile, blk, &fab_rdvld_words);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get fab rdvld words");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%u", fab_rdvld_words);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_fabwrvldwords_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile, blk;
+  char* type;
+  int converter_type;
+  unsigned int fab_wrvld_words;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and converter type
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), blk idx (0-3), and converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  blk = arg_unsigned_long_katcp(d, 2);
+  if (blk >= NUM_BLKS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 3);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckBlockEnabled(rfdc->xrfdc, converter_type, tile, blk) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get converter fab wrvld words
+  result = XRFdc_GetFabWrVldWords(rfdc->xrfdc, converter_type, tile, blk, &fab_wrvld_words);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get fab wrvld words");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%u", fab_wrvld_words);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_fabclkdiv_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile;
+  char* type;
+  int converter_type;
+  short unsigned int fab_clk_div;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3) and converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  // get converter fabric clk out divider
+  result = XRFdc_GetFabClkOutDiv(rfdc->xrfdc, converter_type, tile, &fab_clk_div);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get fab clkout div");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%u", fab_clk_div);
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_set_fabclkdiv_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  int result;
+  unsigned int tile;
+  char* type;
+  int converter_type;
+  short unsigned int fab_clk_div;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver
+  // initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse adc tile, block and desired attenuation parameters
+  if (argc < 4) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3) and converter type (adc|dac) fabclk div");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tile = arg_unsigned_long_katcp(d, 1);
+  if (tile >= NUM_TILES) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 2);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  if (XRFdc_CheckTileEnabled(rfdc->xrfdc, converter_type, tile) != XRFDC_SUCCESS) {
+    prepend_inform_katcp(d);
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "(disabled)");
+    return KATCP_RESULT_OK;
+  }
+
+  fab_clk_div = arg_unsigned_long_katcp(d, 3);
+
+  // set converter tile pl clk rate, format and send info
+  result = XRFdc_SetFabClkOutDiv(rfdc->xrfdc, converter_type, tile, fab_clk_div);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to set fab clk div out");
+    return KATCP_RESULT_FAIL;
+  }
+
+  // readback and send info
+  result = XRFdc_GetFabClkOutDiv(rfdc->xrfdc, converter_type, tile, &fab_clk_div);
+  if (result != XRFDC_SUCCESS) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "failed to get fab clkout div");
+    return KATCP_RESULT_FAIL;
+  }
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "%u", fab_clk_div);
+
+  return KATCP_RESULT_OK;
+}
+
 int rfdc_get_fabclkfreq_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
@@ -1615,7 +2500,7 @@ int rfdc_get_datatype_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // parse adc tile, block and desired attenuation parameters
+  // parse adc tile, block and converter type
   if (argc < 4) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), blk idx (0-3), and converter type (adc|dac)");
     return KATCP_RESULT_INVALID;
@@ -1679,7 +2564,7 @@ int rfdc_get_datawidth_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // parse adc tile, block and desired attenuation parameters
+  // parse tile, block and desired attenuation parameters
   if (argc < 4) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), blk idx (0-3), and converter type (adc|dac)");
     return KATCP_RESULT_INVALID;
@@ -1687,13 +2572,13 @@ int rfdc_get_datawidth_cmd(struct katcp_dispatch *d, int argc) {
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
@@ -1746,7 +2631,7 @@ int rfdc_get_nyquist_zone_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // parse adc tile, block and desired attenuation parameters
+  // parse tile, block and desired attenuation parameters
   if (argc < 4) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), block idx (0-3), converter type (adc|dac)");
     return KATCP_RESULT_INVALID;
@@ -1754,13 +2639,13 @@ int rfdc_get_nyquist_zone_cmd(struct katcp_dispatch *d, int argc) {
 
   tile = arg_unsigned_long_katcp(d, 1);
   if (tile >= NUM_TILES) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx must be in the range 0-%d", NUM_TILES-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile idx must be in the range 0-%d", NUM_TILES-1);
     return KATCP_RESULT_INVALID;
   }
 
   blk = arg_unsigned_long_katcp(d, 2);
   if (blk >= NUM_BLKS) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc block idx must be in the range 0-%d", NUM_BLKS-1);
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "block idx must be in the range 0-%d", NUM_BLKS-1);
     return KATCP_RESULT_INVALID;
   }
 
@@ -3724,7 +4609,7 @@ int rfdc_update_event_cmd(struct katcp_dispatch *d, int argc) {
 
   // parse adc tile, block and desired attenuation parameters
   if (argc < 5) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify: tile idx (0-3), blk idx (0-3), and converter type (adc|dac), and event update (1-mixer, 2-coarse delay, 4-qmc)");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "specify: tile idx (0-3), blk idx (0-3), converter type (adc|dac), update event (1-mixer, 2-coarse delay, 4-qmc)");
     return KATCP_RESULT_INVALID;
   }
 
@@ -3760,7 +4645,7 @@ int rfdc_update_event_cmd(struct katcp_dispatch *d, int argc) {
   // parse update event
   update_event = arg_unsigned_long_katcp(d, 4);
   if ((update_event != XRFDC_EVENT_MIXER) && (update_event != XRFDC_EVENT_QMC) && (update_event != XRFDC_EVENT_CRSE_DLY)) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid update event, must be Mixer, QMC, or Coarse Delay");
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "invalid update event, must be 1 (Mixer), 2 (QMC), or 4 (Coarse Delay)");
     return KATCP_RESULT_INVALID;
   }
 
