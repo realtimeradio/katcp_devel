@@ -50,12 +50,18 @@ int tbs_dto_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_init_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_driver_ver_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_status_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_startup_tile_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_shutdown_tile_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_block_status_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_master_tile_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_update_event_cmd(struct katcp_dispatch *d, int argc);
 
 // converter datapath commands
+int rfdc_get_fabrdvldwords_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_fabwrvldwords_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_fabclkdiv_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_fabclkdiv_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_fabclkfreq_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_datatype_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_datawidth_cmd(struct katcp_dispatch *d, int argc);
@@ -65,7 +71,12 @@ int rfdc_get_coarse_delay_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_set_coarse_delay_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_qmc_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_set_qmc_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_mixer_mode_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_mixer_type_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_coarse_mixer_freq_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_mixer_scale_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_mixer_event_source_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_mixer_settings_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc);
 
 // converter pll commands
