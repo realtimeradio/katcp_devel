@@ -15,7 +15,8 @@ CFLAGS += -DDEBUG
 # use internal hardware monitor
 #CFLAGS += -DINTERNAL_HWMON
 
-RPI = `cat /proc/device-tree/model | awk '{print $$3}'`
+RPI = $(shell cat /proc/device-tree/model | awk '{print $$3}')
+CFLAGS += -DRPI_VERSION=$(RPI)
 SERVER = tcpborphserver3
 SRC = main.c raw.c loadbof.c tg.c tapper.c hwmon.c upload.c subprocess.c ev.c rpjtag_io.c rpjtag_stateMachine.c rpjtag_bit_reader.c spifpga_user.c
 
@@ -24,7 +25,7 @@ all: $(SERVER)
 
 #$(SERVER): $(OBJ) 
 $(SERVER): $(OBJ) $(KATCP)/libkatcp.a
-	$(CC) -DRPI_VERSION=$(RPI) -o $@ $(OBJ) $(LIB)
+	$(CC) -o $@ $(OBJ) $(LIB)
 
 clean: 
 	$(RM) -f $(SERVER) *.o test-*
