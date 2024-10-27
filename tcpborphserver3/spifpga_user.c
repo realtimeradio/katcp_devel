@@ -436,9 +436,9 @@ int config_spi()
         return ret;
     }
 
-	printf("spi mode: %d\n", mode);
-	printf("bits per word: %d\n", bits);
-	printf("max speed: %d Hz (%d KHz)\n", speed, speed/1000);
+	fprintf(stderr, "spi mode: %d\n", mode);
+	fprintf(stderr, "bits per word: %d\n", bits);
+	fprintf(stderr, "max speed: %d Hz (%d KHz)\n", speed, speed/1000);
 
 	return fd;
 }

@@ -111,7 +111,7 @@ int ProgramDevice(int iregs, unsigned char * buffer, int n_bytes)
 	    send_byte_no_tms(buffer[n]);
 		if((n % 1048576) == 0)
         {
-            fprintf(stdout,"%.2f complete\n",(100.*n)/n_bytes);
+            fprintf(stderr,"%.2f complete\n",(100.*n)/n_bytes);
         }
 	}
 
