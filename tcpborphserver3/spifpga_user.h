@@ -5,7 +5,7 @@
 #define MAX_SPEED 4000000
 #define DELAY 1
 #define BITS 8
-#define MAX_BURST_SIZE 256
+#define MAX_BURST_SIZE 128
 #define BYTES_PER_WORD 4
 
 struct fpga_spi_cmd {
