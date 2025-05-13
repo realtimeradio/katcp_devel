@@ -104,6 +104,8 @@ int rfdc_set_cal_mode_cmd(struct katcp_dispatch *d, int argc);
 // adc threshold commands
 int rfdc_get_thresh_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_set_thresh_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_thresh_clrmode_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_thresh_stickyclr_cmd(struct katcp_dispatch *d, int argc);
 
 // dac commands
 int rfdc_get_output_curr_cmd(struct katcp_dispatch *d, int argc);
@@ -113,5 +115,12 @@ int rfdc_set_invsincfir_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_invsincfir_enabled_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_imr_mode_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_set_imr_mode_cmd(struct katcp_dispatch *d, int argc);
+
+// access to interrupt status
+int rfdc_get_en_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_en_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_disable_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_intr_status_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_clr_intr_cmd(struct katcp_dispatch *d, int argc);
 
 #endif // RFSOC_H_
