@@ -1022,6 +1022,7 @@ int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
   int result;
   unsigned int tilemask;
   unsigned int factor;
+  int target_latency = -1; // defaulat to unknown latency
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
   if(tr == NULL) {
@@ -1047,6 +1048,9 @@ int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_INVALID;
   }
 
+  // parse target latency
+  if (argc > 2) target_latency = arg_double_katcp(d,2);
+
   // run mts, report results
   int tmp = XRFDC_MTS_DAC_MARKER_LOC_MASK(3);
   log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "macro defined, result=%d", tmp);
@@ -1054,7 +1058,8 @@ int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
   // init to allow for calling report mts status
   XRFdc_MultiConverter_Init(&rfdc->sync_config, 0, 0); //pl_codes and t1_codes args set to `0` when not used
   rfdc->sync_config.Tiles = tilemask;
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "tile mask set to: 0x%08x", rfdc->sync_config.Tiles);
+  rfdc->sync_config.Target_Latency = target_latency;
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "tile mask: 0x%08x, target latency: %d", rfdc->sync_config.Tiles, rfdc->sync_config.Target_Latency);
   result = XRFdc_MultiConverter_Sync(rfdc->xrfdc, XRFDC_ADC_TILE, &rfdc->sync_config);
   if(result != XRFDC_MTS_OK) {
     extra_response_katcp(d, KATCP_RESULT_FAIL,"mts sync fail, error code 0x%08x", result);
@@ -1213,6 +1218,49 @@ int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc) {
         tile, rfdc->sync_config.Latency[tile], factor, rfdc->sync_config.Offset[tile]);
     }
   }
+
+  return KATCP_RESULT_OK;
+}
+
+int rfdc_get_mts_tile_latency_cmd(struct katcp_dispatch *d, int argc) {
+  struct tbs_raw *tr;
+  struct tbs_rfdc *rfdc;
+  // cmd variables
+  unsigned int tile;
+  unsigned int factor;
+
+  tr = get_mode_katcp(d, TBS_MODE_RAW);
+  if(tr == NULL) {
+    return KATCP_RESULT_FAIL;
+  }
+
+  rfdc = tr->r_rfdc;
+  // TODO: rfdc driver has a built-in `IsReady` to indicate driver initialization. Should use that instead.
+  if (!rfdc->initialized) {
+    extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
+    return KATCP_RESULT_OWN;
+  }
+
+  // parse target tile
+  if (argc < 2) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify adc tile index 0-3");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // validate tile selection
+  tile = arg_unsigned_long_katcp(d, 1);
+  if ( !(1<<tile & rfdc->sync_config.Tiles)) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx %d not enable in MTS tile mask", tile);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // get decimation factor to report adjusted delay offset
+  XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
+
+  // format and send
+  prepend_inform_katcp(d);
+  append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "Latency %u, DelayOffset %u, DecFactor %u",
+   rfdc->sync_config.Latency[tile], rfdc->sync_config.Offset[tile], factor);
 
   return KATCP_RESULT_OK;
 }
