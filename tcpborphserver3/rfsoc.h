@@ -87,8 +87,7 @@ int rfdc_get_clk_src_cmd(struct katcp_dispatch *d, int argc);
 // adc MTS commands
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_mts_tile_latency_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_mts_debug_cmd(struct katcp_dispatch *d, int argc);
 
 // adc digital step attenuator commands
 int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc);
