@@ -31,7 +31,8 @@ struct tbs_rfdc {
 
   XRFdc *xrfdc;
   struct metal_device **metal_dev;
-  XRFdc_MultiConverter_Sync_Config sync_config;
+  // sync_config[0] is adc configuration, sync_config[1] is dac configuration
+  XRFdc_MultiConverter_Sync_Config sync_config[2];
 
   // TODO: rfdc driver successfully completed, found rfdc driver has a built-in
   // member called `IsReady`, should move to using that.
