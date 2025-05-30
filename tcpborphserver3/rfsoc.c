@@ -1012,16 +1012,17 @@ int rfdc_get_block_status_cmd(struct katcp_dispatch *d, int argc) {
 }
 
 /*
-  ?rfdc-run-mts tile-mask TODO: could add a [verbose] option for report
-    execute multi-tile synchronization for the selected tiles indicated by
-    `tile-mask`. Inform with verbose dump of mts status.
+  ?rfdc-run-mts adc|dac tile-mask [target_latency]
+  target_latency defaults to -1 for an unspecified (unknown) latency
 */
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
   int result;
   unsigned int tilemask;
-  unsigned int factor;
+  char* type;
+  unsigned int converter_type;
+  int target_latency = -1; // defaulat to unknown latency
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
   if(tr == NULL) {
@@ -1035,91 +1036,60 @@ int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // parse tile mask
-  if (argc < 2) {
-    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify tile mask for tiles to sync");
+  // parse converter type and tilemask
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify converter type (adc|dac) and tile mask for tiles to sync");
     return KATCP_RESULT_INVALID;
   }
 
-  tilemask = arg_unsigned_long_katcp(d, 1);
+  type = arg_string_katcp(d, 1);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  tilemask = arg_unsigned_long_katcp(d, 2);
   if (tilemask > 0xf) {
     log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "tile mask must be in range (0-%d)", 0xf);
     return KATCP_RESULT_INVALID;
   }
 
+  // parse target latency if present
+  if (argc > 3) target_latency = arg_double_katcp(d,3);
+
   // run mts, report results
-  int tmp = XRFDC_MTS_DAC_MARKER_LOC_MASK(3);
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "macro defined, result=%d", tmp);
-  // TODO: this init of sync config should probably live where rfdc driver is
-  // init to allow for calling report mts status
-  XRFdc_MultiConverter_Init(&rfdc->sync_config, 0, 0); //pl_codes and t1_codes args set to `0` when not used
-  rfdc->sync_config.Tiles = tilemask;
-  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "tile mask set to: 0x%08x", rfdc->sync_config.Tiles);
-  result = XRFdc_MultiConverter_Sync(rfdc->xrfdc, XRFDC_ADC_TILE, &rfdc->sync_config);
+  XRFdc_MultiConverter_Sync_Config* sync_config;
+  sync_config = &rfdc->sync_config[converter_type];
+
+  XRFdc_MultiConverter_Init(sync_config, 0, 0); //pl_codes and t1_codes args set to `0` when not used
+  sync_config->Tiles = tilemask;
+  sync_config->Target_Latency = target_latency;
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "converter type: %s, tile mask: 0x%08x, target latency: %d",
+    type, sync_config->Tiles, sync_config->Target_Latency);
+  result = XRFdc_MultiConverter_Sync(rfdc->xrfdc, converter_type, sync_config);
   if(result != XRFDC_MTS_OK) {
     extra_response_katcp(d, KATCP_RESULT_FAIL,"mts sync fail, error code 0x%08x", result);
     return KATCP_RESULT_OWN;
   }
-
-  // inform with detailed report TODO: could make report a verbose cmd option
-  if(result == XRFDC_MTS_OK) {
-    prepend_inform_katcp(d);
-    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "mts sync report");
-    for(int tile=0; tile<NUM_TILES; tile++) {
-      if( (1<<tile) & rfdc->sync_config.Tiles) {
-        XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: Latency(T1) = %3d, Adjusted Delay Offset(T%d) = %3d, Marker Delay = %d",
-          tile, rfdc->sync_config.Latency[tile], factor,
-          rfdc->sync_config.Offset[tile], rfdc->sync_config.Marker_Delay);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: PLL DTC Code = %d", tile, rfdc->sync_config.DTC_Set_PLL.DTC_Code[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: PLL Num Windows = %d", tile, rfdc->sync_config.DTC_Set_PLL.Num_Windows[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: PLL Max Gap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Max_Gap[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: PLL Min Gap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Min_Gap[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: PLL Max Overlap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Max_Overlap[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: T1 DTC Code = %d", tile, rfdc->sync_config.DTC_Set_T1.DTC_Code[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: T1 Num Windows = %d", tile, rfdc->sync_config.DTC_Set_T1.Num_Windows[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: T1 Max Gap = %d", tile, rfdc->sync_config.DTC_Set_T1.Max_Gap[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: T1 Min Gap = %d", tile, rfdc->sync_config.DTC_Set_T1.Min_Gap[tile]);
-        prepend_inform_katcp(d);
-        append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-          "ADC%d: T1 Max Overlap = %d", tile, rfdc->sync_config.DTC_Set_T1.Max_Overlap[tile]);
-      }
-    }
-    log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "mts complete");
-  }
+  log_message_katcp(d, KATCP_LEVEL_INFO, NULL, "mts complete! run ?rfdc-mts-debug-info adc|dac for detailed information");
 
   return KATCP_RESULT_OK;
 }
 
 /*
-  ?rfdc-mts-report
+  ?rfdc-mts-debug-info
 */
 
-int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc) {
+int rfdc_mts_debug_cmd(struct katcp_dispatch *d, int argc) {
 
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
-  int result;
+  char* type;
+  unsigned int converter_type;
   unsigned int factor;
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
@@ -1133,62 +1103,81 @@ int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc) {
     extra_response_katcp(d, KATCP_RESULT_FAIL, "rfdc driver not initialized");
     return KATCP_RESULT_OWN;
   }
+
+  if (argc < 2) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must converter type (adc|dac)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  // parse converter type
+  type = arg_string_katcp(d, 1);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  XRFdc_MultiConverter_Sync_Config* sync_config;
+  sync_config = &rfdc->sync_config[converter_type];
 
   append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "mts sync report");
   for(int tile=0; tile<NUM_TILES; tile++) {
-    if( (1<<tile) & rfdc->sync_config.Tiles) {
-      XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
+    if( (1<<tile) & sync_config->Tiles) {
+      if (converter_type == XRFDC_ADC_TILE) {
+        XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
+      } else {
+        XRFdc_GetInterpolationFactor(rfdc->xrfdc, tile, 0, &factor);
+      }
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: Latency(T1) = %3d, Adjusted Delay Offset(T%d) = %3d, Marker Delay = %d",
-        tile, rfdc->sync_config.Latency[tile], factor,
-        rfdc->sync_config.Offset[tile], rfdc->sync_config.Marker_Delay);
+        "%s%d: Latency(T1) = %3d, Adjusted Delay Offset(T%d) = %3d, Marker Delay = %d",
+        type, tile, sync_config->Latency[tile], factor, sync_config->Offset[tile], sync_config->Marker_Delay);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: PLL DTC Code = %d", tile, rfdc->sync_config.DTC_Set_PLL.DTC_Code[tile]);
+        "%s%d: PLL DTC Code = %d", type, tile, sync_config->DTC_Set_PLL.DTC_Code[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: PLL Num Windows = %d", tile, rfdc->sync_config.DTC_Set_PLL.Num_Windows[tile]);
+        "%s%d: PLL Num Windows = %d", type, tile, sync_config->DTC_Set_PLL.Num_Windows[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: PLL Max Gap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Max_Gap[tile]);
+        "%s%d: PLL Max Gap = %d", type, tile, sync_config->DTC_Set_PLL.Max_Gap[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: PLL Min Gap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Min_Gap[tile]);
+        "%s%d: PLL Min Gap = %d", type, tile, sync_config->DTC_Set_PLL.Min_Gap[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: PLL Max Overlap = %d", tile, rfdc->sync_config.DTC_Set_PLL.Max_Overlap[tile]);
+        "%s%d: PLL Max Overlap = %d", type, tile, sync_config->DTC_Set_PLL.Max_Overlap[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: T1 DTC Code = %d", tile, rfdc->sync_config.DTC_Set_T1.DTC_Code[tile]);
+        "%s%d: T1 DTC Code = %d", type, tile, sync_config->DTC_Set_T1.DTC_Code[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: T1 Num Windows = %d", tile, rfdc->sync_config.DTC_Set_T1.Num_Windows[tile]);
+        "%s%d: T1 Num Windows = %d", type, tile, sync_config->DTC_Set_T1.Num_Windows[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: T1 Max Gap = %d", tile, rfdc->sync_config.DTC_Set_T1.Max_Gap[tile]);
+        "%s%d: T1 Max Gap = %d", type, tile, sync_config->DTC_Set_T1.Max_Gap[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: T1 Min Gap = %d", tile, rfdc->sync_config.DTC_Set_T1.Min_Gap[tile]);
+        "%s%d: T1 Min Gap = %d", type, tile, sync_config->DTC_Set_T1.Min_Gap[tile]);
       prepend_inform_katcp(d);
       append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: T1 Max Overlap = %d", tile, rfdc->sync_config.DTC_Set_T1.Max_Overlap[tile]);
+        "%s%d: T1 Max Overlap = %d", type, tile, sync_config->DTC_Set_T1.Max_Overlap[tile]);
     }
   }
 
   return KATCP_RESULT_OK;
 }
 
-/*
-
-  ?rfdc-report-mts-latency
-    use informs to report mts tile T1 (sample clock) latency and offsets (units
-    of PL word) added to each fifo
-*/
-int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc) {
+int rfdc_get_mts_tile_latency_cmd(struct katcp_dispatch *d, int argc) {
   struct tbs_raw *tr;
   struct tbs_rfdc *rfdc;
   // cmd variables
+  char* type;
+  unsigned int converter_type;
+  unsigned int tile;
   unsigned int factor;
 
   tr = get_mode_katcp(d, TBS_MODE_RAW);
@@ -1203,15 +1192,47 @@ int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc) {
     return KATCP_RESULT_OWN;
   }
 
-  // report status
-  for(int tile=0; tile<NUM_TILES; tile++) {
-    if( (1<<tile) & rfdc->sync_config.Tiles) {
-      XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
-      prepend_inform_katcp(d);
-      append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST,
-        "ADC%d: Latency(T1) =%3d, Adjusted Delay Offset(T%d) =%3d",
-        tile, rfdc->sync_config.Latency[tile], factor, rfdc->sync_config.Offset[tile]);
-    }
+  // parse converter type and setup reference to sync config
+  if (argc < 3) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify converter type (adc|dac) and tile index (0-3)");
+    return KATCP_RESULT_INVALID;
+  }
+
+  type = arg_string_katcp(d, 1);
+  if (strcmp(type, "adc") == 0) {
+    converter_type = XRFDC_ADC_TILE;
+  } else if (strcmp(type, "dac") == 0) {
+    converter_type = XRFDC_DAC_TILE;
+  } else {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "must specify 'adc' or 'dac' converter type");
+    return KATCP_RESULT_INVALID;
+  }
+
+  XRFdc_MultiConverter_Sync_Config* sync_config;
+  sync_config = &rfdc->sync_config[converter_type];
+
+  // validate tile selection
+  tile = arg_unsigned_long_katcp(d, 2);
+  if ( !(1<<tile & sync_config->Tiles)) {
+    log_message_katcp(d, KATCP_LEVEL_ERROR, NULL, "adc tile idx %d not enable in MTS tile mask", tile);
+    return KATCP_RESULT_INVALID;
+  }
+
+  // get decimation or interpolation factor to report adjusted delay offset
+  if (converter_type == XRFDC_ADC_TILE) {
+    XRFdc_GetDecimationFactor(rfdc->xrfdc, tile, 0, &factor);
+  } else {
+    XRFdc_GetInterpolationFactor(rfdc->xrfdc, tile, 0, &factor);
+  }
+
+  // format and send
+  prepend_inform_katcp(d);
+  if (converter_type == XRFDC_ADC_TILE) {
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "Latency %u, DelayOffset %u, DecFactor %u",
+      sync_config->Latency[tile], sync_config->Offset[tile], factor);
+  } else {
+    append_args_katcp(d, KATCP_FLAG_STRING|KATCP_FLAG_LAST, "Latency %u, DelayOffset %u, InterpFactor %u",
+      sync_config->Latency[tile], sync_config->Offset[tile], factor);
   }
 
   return KATCP_RESULT_OK;

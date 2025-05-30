@@ -3254,9 +3254,9 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-get-clk-src", "get adc|dac converter clock source (?rfdc-get-clk-src tile-num adc|dac)", &rfdc_get_clk_src_cmd, 0, TBS_MODE_RAW);
 
   // adc MTS commands
-  result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi-tile synchronization (?rfdc-run-mts tile-mask)", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-report-mts-latency", "report latency from mts (?rfdc-report-mts-latency)", &rfdc_report_mts_latency_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-mts-report", "provide detailed mts marker report (?rfdc-mts-report)", &rfdc_mts_report_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi-tile synchronization (?rfdc-run-mts adc|dac tile-mask [target_latency])", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-mts-tile-latency", "return mts latency for a tile (?rfdc-mts-tile-latency adc|dac tile-num)", &rfdc_get_mts_tile_latency_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-mts-debug-info", "provide detailed mts marker report (?rfdc-debug-info adc|dac)", &rfdc_mts_debug_cmd, 0, TBS_MODE_RAW);
 
   // adc digital step attenuator commands
   result += register_flag_mode_katcp(d, "?rfdc-get-dsa", "get digital step attenuator values (?rfdc-get-dsa adc-tile-idx adc-blk-idx)", &rfdc_get_dsa_cmd, 0, TBS_MODE_RAW);
