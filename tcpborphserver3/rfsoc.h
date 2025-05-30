@@ -44,18 +44,83 @@ void destroy_tbs_rfdc(struct katcp_dispatch *d, struct tbs_rfdc *rfdc);
 int init_rfdc(struct katcp_dispatch *d, struct tbs_rfdc *rfdc);
 
 // katcp api commands
-int rfdc_driver_ver_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_get_master_tile_cmd(struct katcp_dispatch *d, int argc);
+int tbs_dto_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_init_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_driver_ver_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_status_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_set_dsa_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_startup_tile_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_shutdown_tile_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_block_status_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_master_tile_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_update_event_cmd(struct katcp_dispatch *d, int argc);
+
+// converter datapath commands
+int rfdc_get_fabrdvldwords_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_fabwrvldwords_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_fabclkdiv_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_fabclkdiv_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_fabclkfreq_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_datatype_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_datawidth_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_nyquist_zone_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_nyquist_zone_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_coarse_delay_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_coarse_delay_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_qmc_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_qmc_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_mixer_mode_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_mixer_type_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_coarse_mixer_freq_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_mixer_scale_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_mixer_event_source_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_mixer_settings_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc);
+
+// converter pll commands
+int rfdc_get_pll_config_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_dynamic_pll_config_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_pll_lock_status_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_clk_src_cmd(struct katcp_dispatch *d, int argc);
+
+// adc MTS commands
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_report_mixer_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_update_nco_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_program_pll_cmd(struct katcp_dispatch *d, int argc);
-int tbs_dto_cmd(struct katcp_dispatch *d, int argc);
+
+// adc digital step attenuator commands
+int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_dsa_cmd(struct katcp_dispatch *d, int argc);
+
+// adc calibration commands
+int rfdc_get_cal_freeze_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_cal_freeze_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_cal_coeffs_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_cal_coeffs_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_disable_cal_override_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_cal_mode_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_cal_mode_cmd(struct katcp_dispatch *d, int argc);
+
+// adc threshold commands
+int rfdc_get_thresh_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_thresh_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_thresh_clrmode_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_thresh_stickyclr_cmd(struct katcp_dispatch *d, int argc);
+
+// dac commands
+int rfdc_get_output_curr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_vop_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_invsincfir_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_invsincfir_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_invsincfir_enabled_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_imr_mode_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_imr_mode_cmd(struct katcp_dispatch *d, int argc);
+
+// access to interrupt status
+int rfdc_get_en_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_en_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_disable_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_intr_status_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_clr_intr_cmd(struct katcp_dispatch *d, int argc);
 
 #endif // RFSOC_H_

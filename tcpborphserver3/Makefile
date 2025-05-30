@@ -1,7 +1,7 @@
 KATCP ?= ../katcp
-RFDC ?= ../rfdc
+RFDC ?= ../rfdc_v8.1
 RFSOC_PLATFORM ?=
-SYSROOT ?= ../sysroot
+SYSROOT ?= ../sysroot_2020_2
 
 include ../Makefile.inc
 
