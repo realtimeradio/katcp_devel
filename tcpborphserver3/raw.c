@@ -3220,6 +3220,7 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   /* RFSoC devel */
 #if IS_RFSOC == 1
   //result += register_flag_mode_katcp(d, "?rfdc-upload", "upload different configuration products to initialize rfdc (?rfdc-upload dto|lmk|lmx [port [length [timeout]]]", &rfdc_upload, 0, TBS_MODE_RAW);
+  // JH: I suppose DTO isn't strictly RFSOC, but it lives in rfsoc.c, so put it here in the ifdef...
   result += register_flag_mode_katcp(d, "?dto", "manage device tree overlay (?dto apply|remove)", &tbs_dto_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-upload-rfclk", "upload tics txt register file for programming rf plls (?rfdc-upload-rfclk [tcs-file-name [port [length [timeout]]]])", &rfdc_upload_rfclk_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-progpll", "program onboard plls (?rfdc-progpll lmk|lmx [tcs-file-name])", &rfdc_program_pll_cmd, 0, TBS_MODE_RAW);
@@ -3253,7 +3254,6 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-set-mixer-scale","set mixer scale for adc|dac converter tile and blk (?rfdc-set-mixer-scale tile-idx blk-idx adc|dac mixer-scale [trigger]", &rfdc_set_mixer_scale_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-set-mixer-event-source","set source for mixer update events for adc|dac converter tile and blk (?rfdc-set-mixer-event-source tile-idx blk-idx adc|dac", &rfdc_set_mixer_event_source_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-update-nco", "set fine mixer freq and phase for adc|dac converter tile and blk (?rfdc-update-nco) (?rfdc-update-nco tile-idx blk-idx adc|dac nco-ghz [phase] [trigger])", &rfdc_update_nco_cmd, 0, TBS_MODE_RAW);
-
   // converter pll commands
   result += register_flag_mode_katcp(d, "?rfdc-get-pll-config", "get pll config for adc|dac converter (?rfdc-get-pll-config tile-num adc|dac)", &rfdc_get_pll_config_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-set-pll-config", "dynamically config pll for adc|dac converter (?rfdc-set-pll-config tile-num adc|dac clk-src pll-ref-freq sample-rate)", &rfdc_dynamic_pll_config_cmd, 0, TBS_MODE_RAW);
@@ -3261,11 +3261,9 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-get-clk-src", "get adc|dac converter clock source (?rfdc-get-clk-src tile-num adc|dac)", &rfdc_get_clk_src_cmd, 0, TBS_MODE_RAW);
 
   // adc MTS commands
-  result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi-tile synchronization (?rfdc-run-mts tile-mask)", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-report-mts-latency", "report latency from mts (?rfdc-report-mts-latency)", &rfdc_report_mts_latency_cmd, 0, TBS_MODE_RAW);
-  result += register_flag_mode_katcp(d, "?rfdc-mts-report", "provide detailed mts marker report (?rfdc-mts-report)", &rfdc_mts_report_cmd, 0, TBS_MODE_RAW);
-  // JH: I suppose DTO isn't strictly RFSOC, but it lives in rfsoc.c, so put it here in the ifdef...
-  result += register_flag_mode_katcp(d, "?dto", "manage device tree overlay (?dto apply|remove)", &tbs_dto_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-run-mts", "run multi-tile synchronization (?rfdc-run-mts adc|dac tile-mask [target_latency])", &rfdc_run_mts_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-mts-tile-latency", "return mts latency for a tile (?rfdc-mts-tile-latency adc|dac tile-num)", &rfdc_get_mts_tile_latency_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-mts-debug-info", "provide detailed mts marker report (?rfdc-debug-info adc|dac)", &rfdc_mts_debug_cmd, 0, TBS_MODE_RAW);
 
   // adc digital step attenuator commands
   result += register_flag_mode_katcp(d, "?rfdc-get-dsa", "get digital step attenuator values (?rfdc-get-dsa adc-tile-idx adc-blk-idx)", &rfdc_get_dsa_cmd, 0, TBS_MODE_RAW);
@@ -3283,6 +3281,8 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   // adc threshold commands
   result += register_flag_mode_katcp(d, "?rfdc-get-adc-thresh", "get ADC threshold settings (?rfdc-get-adc-thresh tile-num block-num)", &rfdc_get_thresh_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-set-adc-thresh", "set ADC threshold settings (?rfdc-get-adc-thresh tile-num block-num thresh-settings)", &rfdc_set_thresh_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-thresh-clrmode", "set ADC threshold clear mode (?rfdc-set-thresh-clrmode tile-num block-num threshold-num clear-mode)", &rfdc_set_thresh_clrmode_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-thresh-stickyclr", "clear ADC threshold flag (?rfdc-thresh-stickyclr tile-num block-num threshold-num)", &rfdc_thresh_stickyclr_cmd, 0, TBS_MODE_RAW);
 
   // dac commands
   result += register_flag_mode_katcp(d, "?rfdc-get-output-current", "get output current in micro amp (?rfdc-get-output-current dac-tile-idx dac-blk-idx)", &rfdc_get_output_curr_cmd, 0, TBS_MODE_RAW);
@@ -3292,6 +3292,13 @@ int setup_raw_tbs(struct katcp_dispatch *d, char *bofdir, int argc, char **argv)
   result += register_flag_mode_katcp(d, "?rfdc-set-invsincfir", "set inverse sinc fir mode (?rfdc-set-invsincfir dac-tile-idx dac-blk-idx)", &rfdc_set_invsincfir_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-get-imr-mode", "get IMR filter mode (?rfdc-get-imr-mode dac-tile-idx dac-blk-idx)", &rfdc_get_imr_mode_cmd, 0, TBS_MODE_RAW);
   result += register_flag_mode_katcp(d, "?rfdc-set-imr-mode", "set IMR filter mode (?rfdc-set-imr-mode dac-tile-idx dac-blk-idx 0(lowpass)|1(highpass))", &rfdc_set_imr_mode_cmd, 0, TBS_MODE_RAW);
+
+  // access interrupts
+  result += register_flag_mode_katcp(d, "?rfdc-get-en-intr", "get enabled interrupts for a converter (?rfdc-get-en-intr-mask tile-idx blk-idx adc|dac)", &rfdc_get_en_intr_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-set-en-intr", "set interrupt mask for a converter (?rfdc-get-en-intr-mask tile-idx blk-idx adc|dac mask)", &rfdc_set_en_intr_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-disable-intr", "disable interrupts with mask for a converter (?rfdc-get-en-intr-mask tile-idx blk-idx adc|dac mask)", &rfdc_disable_intr_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-get-intr-status", "get interrupt status (?rfdc-get-intr-status tile-idx blk-idx adc|dac)", &rfdc_get_intr_status_cmd, 0, TBS_MODE_RAW);
+  result += register_flag_mode_katcp(d, "?rfdc-clr-intr", "clear interrupt (?rfdc-clr-intr tile-idx blk-idx adc|dac mask)", &rfdc_clr_intr_cmd, 0, TBS_MODE_RAW);
 #endif
 
   tr->r_chassis = chassis_init_tbs(d, TBS_ROACH_CHASSIS);

@@ -33,7 +33,8 @@ struct tbs_rfdc {
 
   XRFdc *xrfdc;
   struct metal_device **metal_dev;
-  XRFdc_MultiConverter_Sync_Config sync_config;
+  // sync_config[0] is adc configuration, sync_config[1] is dac configuration
+  XRFdc_MultiConverter_Sync_Config sync_config[2];
 
   // TODO: rfdc driver successfully completed, found rfdc driver has a built-in
   // member called `IsReady`, should move to using that.
@@ -87,8 +88,8 @@ int rfdc_get_clk_src_cmd(struct katcp_dispatch *d, int argc);
 
 // adc MTS commands
 int rfdc_run_mts_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_mts_report_cmd(struct katcp_dispatch *d, int argc);
-int rfdc_report_mts_latency_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_mts_tile_latency_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_mts_debug_cmd(struct katcp_dispatch *d, int argc);
 
 // adc digital step attenuator commands
 int rfdc_get_dsa_cmd(struct katcp_dispatch *d, int argc);
@@ -106,6 +107,8 @@ int rfdc_set_cal_mode_cmd(struct katcp_dispatch *d, int argc);
 // adc threshold commands
 int rfdc_get_thresh_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_set_thresh_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_thresh_clrmode_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_thresh_stickyclr_cmd(struct katcp_dispatch *d, int argc);
 
 // dac commands
 int rfdc_get_output_curr_cmd(struct katcp_dispatch *d, int argc);
@@ -115,5 +118,12 @@ int rfdc_set_invsincfir_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_invsincfir_enabled_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_get_imr_mode_cmd(struct katcp_dispatch *d, int argc);
 int rfdc_set_imr_mode_cmd(struct katcp_dispatch *d, int argc);
+
+// access to interrupt status
+int rfdc_get_en_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_set_en_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_disable_intr_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_get_intr_status_cmd(struct katcp_dispatch *d, int argc);
+int rfdc_clr_intr_cmd(struct katcp_dispatch *d, int argc);
 
 #endif // RFSOC_H_
