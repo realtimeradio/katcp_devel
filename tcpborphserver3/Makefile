@@ -44,7 +44,7 @@ clean:
 	$(RM) -f $(SERVER) *.o test-*
 
 %.o: %.c
-	$(CC) $(CFLAGS) --sysroot=$(SYSROOT) $(RFSOC_PLATFORM) -DIS_RFSOC=$(IS_RFSOC) -c $< -o $@ $(INC)
+	$(CC) $(CFLAGS) --sysroot=$(SYSROOT) -DPLATFORM=$(RFSOC_PLATFORM) -DIS_RFSOC=$(IS_RFSOC) -c $< -o $@ $(INC)
 
 # Ensure that kcpfpg gets installed
 install: all
