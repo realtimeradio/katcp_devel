@@ -3,7 +3,7 @@
 	url = https://github.com/Xilinx/embeddedsw
 [submodule "tcpborphserver3/i2c-utils"]
 	path = tcpborphserver3/i2c-utils
-	url = https://gitlab.ras.byu.edu/alpaca/i2c-utils
+	url = https://github.com/realtimeradio/i2c-utils
 [submodule "libmetal"]
 	path = libmetal
 	url = https://github.com/OpenAMP/libmetal
